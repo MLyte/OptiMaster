@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "optimaster"
+version = "0.1.0"
+description = "Local FFmpeg-based audio finishing assistant"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+  { name = "Mathieu Luyten" }
+]
+dependencies = [
+  "PyYAML>=6.0.1",
+]
+
+[project.scripts]
+optimaster = "optimaster.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
