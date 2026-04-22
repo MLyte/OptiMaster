@@ -148,6 +148,7 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(central)
         self._build_menu()
+        self._refresh_history_panel()
 
     def _build_header(self) -> QGroupBox:
         box = QGroupBox("Session")
@@ -264,8 +265,19 @@ class MainWindow(QMainWindow):
         best_layout.addRow("Why it ranked first", self.best_labels["reasons"])
         best_layout.addRow("Rendered file", self.best_labels["path"])
 
+        self.history_box = QGroupBox("Recent sessions")
+        history_layout = QVBoxLayout(self.history_box)
+        self.history_panel = QPlainTextEdit()
+        self.history_panel.setReadOnly(True)
+        self.history_panel.setPlaceholderText("Run a first optimization to build local history.")
+        refresh_history_button = QPushButton("Refresh history")
+        refresh_history_button.clicked.connect(self._refresh_history_panel)
+        history_layout.addWidget(self.history_panel, stretch=1)
+        history_layout.addWidget(refresh_history_button)
+
         layout.addWidget(self.source_box, stretch=1)
         layout.addWidget(self.best_box, stretch=1)
+        layout.addWidget(self.history_box, stretch=1)
         return layout
 
     def _build_results(self) -> QGroupBox:
@@ -496,6 +508,7 @@ class MainWindow(QMainWindow):
             self.current_session = result
             self._populate_analysis(result.analysis)
             self._populate_session(result)
+            self._refresh_history_panel()
             self.status_label.setText(
                 f"Optimization complete. Session {result.session_id} is ready for review."
             )
@@ -622,6 +635,24 @@ class MainWindow(QMainWindow):
         self.details_panel.clear()
         self._populate_best_candidate(None)
         self._update_actions()
+
+    def _refresh_history_panel(self) -> None:
+        history_rows = EngineService.load_recent_history(limit=8)
+        if not history_rows:
+            self.history_panel.setPlainText("No local history yet.")
+            return
+        lines: list[str] = []
+        for item in reversed(history_rows):
+            created_at = str(item.get("created_at", "unknown date"))
+            session_id = str(item.get("session_id", "n/a"))
+            mode = str(item.get("mode", "n/a"))
+            source_name = Path(str(item.get("source_path", "unknown"))).name
+            best_candidate = str(item.get("best_candidate", "n/a"))
+            best_score = item.get("best_score", "n/a")
+            lines.append(
+                f"{created_at} | {session_id} | {source_name} | mode={mode} | best={best_candidate} ({best_score})"
+            )
+        self.history_panel.setPlainText("\n".join(lines))
 
     def _set_busy(self, busy: bool) -> None:
         self.analyze_button.setDisabled(busy)

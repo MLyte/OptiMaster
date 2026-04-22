@@ -28,6 +28,7 @@ PROFILE_MAP = {
 }
 
 ProgressCallback = Callable[[str, int], None]
+HISTORY_LIMIT = 200
 
 
 @dataclass(slots=True)
@@ -149,6 +150,50 @@ class EngineService:
             ),
             encoding="utf-8",
         )
+        self._append_session_history(session=session, output_dir=output_dir)
+
+    @staticmethod
+    def history_path() -> Path:
+        return Path.home() / ".optimaster" / "session_history.jsonl"
+
+    def _append_session_history(
+        self,
+        session: OptimizationSession,
+        output_dir: Path,
+        history_file: Path | None = None,
+    ) -> None:
+        history_file = history_file or self.history_path()
+        history_file.parent.mkdir(parents=True, exist_ok=True)
+        existing = self.load_recent_history(limit=HISTORY_LIMIT, history_file=history_file)
+        best = session.best_candidate
+        existing.append(
+            {
+                "session_id": session.session_id,
+                "created_at": datetime.now(UTC).isoformat(),
+                "mode": session.mode.value,
+                "source_path": str(session.analysis.source_path),
+                "profile": session.analysis.profile.value,
+                "output_dir": str(output_dir),
+                "best_candidate": best.preset.name if best else None,
+                "best_score": best.score if best else None,
+            }
+        )
+        retained = existing[-HISTORY_LIMIT:]
+        with history_file.open("w", encoding="utf-8") as handle:
+            for item in retained:
+                handle.write(json.dumps(item) + "\n")
+
+    @staticmethod
+    def load_recent_history(limit: int = 8, history_file: Path | None = None) -> list[dict[str, object]]:
+        target = history_file or EngineService.history_path()
+        if not target.exists():
+            return []
+        rows: list[dict[str, object]] = []
+        for line in target.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            rows.append(json.loads(line))
+        return rows[-max(limit, 0) :]
 
     @staticmethod
     def _notify(progress_callback: ProgressCallback | None, message: str, percent: int) -> None:
