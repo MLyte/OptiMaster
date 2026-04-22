@@ -160,8 +160,8 @@ class MainWindow(QMainWindow):
         title = QLabel("Drop a WAV or FLAC premaster here")
         title.setObjectName("heroTitle")
         subtitle = QLabel(
-            "Analyze the source, test a few careful finishing passes, "
-            "then review the top-ranked exports."
+            "Analyze your source, run careful finishing passes, "
+            "then review and export the best candidate."
         )
         subtitle.setWordWrap(True)
 
@@ -219,7 +219,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.optimize_button, 3, 1)
         layout.addWidget(self.export_button, 3, 2)
 
-        self.status_label = QLabel("Ready for analysis.")
+        self.status_label = QLabel("Ready. Choose a source file to begin.")
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
@@ -238,7 +238,7 @@ class MainWindow(QMainWindow):
             "integrated": QLabel("--"),
             "true_peak": QLabel("--"),
             "lra": QLabel("--"),
-            "diagnostics": QLabel("Run an analysis to inspect the source profile."),
+            "diagnostics": QLabel("Run analysis to inspect source profile and safety checks."),
         }
         self.metric_labels["diagnostics"].setWordWrap(True)
         source_layout.addRow("Profile", self.metric_labels["profile"])
@@ -413,7 +413,7 @@ class MainWindow(QMainWindow):
         self.input_edit.setText(path)
         default_dir = Path(path).resolve().parent / "renders"
         self.output_edit.setText(str(default_dir))
-        self.status_label.setText("Source file selected. Ready to analyze.")
+        self.status_label.setText("Source selected. Run analysis or optimization when ready.")
         self.progress_bar.setValue(0)
         self._update_actions()
 
@@ -487,7 +487,7 @@ class MainWindow(QMainWindow):
             self.current_session = None
             self._populate_analysis(result)
             self._clear_results()
-            self.status_label.setText("Analysis complete.")
+            self.status_label.setText("Analysis complete. You can now run optimization.")
             self.progress_bar.setValue(100)
             return
 
@@ -497,12 +497,12 @@ class MainWindow(QMainWindow):
             self._populate_analysis(result.analysis)
             self._populate_session(result)
             self.status_label.setText(
-                f"Optimization complete. Session {result.session_id} is ready for review."
+                f"Optimization complete. Review ranking and export your preferred render."
             )
             self.progress_bar.setValue(100)
 
     def _on_worker_failed(self, message: str) -> None:
-        self.status_label.setText("Task failed.")
+        self.status_label.setText("Task failed. Check the error dialog for details.")
         self.progress_bar.setValue(0)
         self._show_error(message)
 
