@@ -5,8 +5,9 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QThread, Qt, Signal
+from PySide6.QtCore import QObject, QThread, Qt, QUrl, Signal
 from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent
+from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication,
     QAbstractItemView,
@@ -33,6 +34,7 @@ from PySide6.QtWidgets import (
 
 from optimaster.config import load_config
 from optimaster.errors import AppError
+from optimaster.history import SessionHistoryStore
 from optimaster.models import CandidateResult, OptimizationMode, OptimizationSession, SourceAnalysis
 from optimaster.service import EngineService
 
@@ -130,9 +132,15 @@ class MainWindow(QMainWindow):
         self.current_output_dir: Path | None = None
         self._thread: QThread | None = None
         self._worker: EngineWorker | None = None
+        self.history_store = SessionHistoryStore()
+        self.audio_player = QMediaPlayer(self)
+        self.audio_output = QAudioOutput(self)
+        self.audio_player.setAudioOutput(self.audio_output)
+        self.current_playback: str | None = None
 
         self._build_ui()
         self._apply_styles()
+        self._load_history()
         self._update_actions()
 
     def _build_ui(self) -> None:
@@ -144,6 +152,7 @@ class MainWindow(QMainWindow):
         root.addWidget(self._build_header())
         root.addWidget(self._build_controls())
         root.addLayout(self._build_summary(), stretch=2)
+        root.addWidget(self._build_listening_tools())
         root.addWidget(self._build_results(), stretch=3)
 
         self.setCentralWidget(central)
@@ -267,6 +276,37 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.source_box, stretch=1)
         layout.addWidget(self.best_box, stretch=1)
         return layout
+
+    def _build_listening_tools(self) -> QGroupBox:
+        box = QGroupBox("A/B listening and history")
+        layout = QVBoxLayout(box)
+
+        listening_row = QHBoxLayout()
+        self.play_source_button = QPushButton("Play source (A)")
+        self.play_candidate_button = QPushButton("Play selected candidate (B)")
+        self.stop_audio_button = QPushButton("Stop")
+        self.play_source_button.clicked.connect(self._play_source)
+        self.play_candidate_button.clicked.connect(self._play_selected_candidate)
+        self.stop_audio_button.clicked.connect(self._stop_playback)
+        listening_row.addWidget(self.play_source_button)
+        listening_row.addWidget(self.play_candidate_button)
+        listening_row.addWidget(self.stop_audio_button)
+
+        self.playback_label = QLabel("Playback idle.")
+        self.playback_label.setWordWrap(True)
+
+        self.history_table = QTableWidget(0, 5)
+        self.history_table.setHorizontalHeaderLabels(["Date (UTC)", "Session", "Mode", "Best", "Source"])
+        self.history_table.setAlternatingRowColors(True)
+        self.history_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.history_table.verticalHeader().setVisible(False)
+        self.history_table.horizontalHeader().setStretchLastSection(True)
+        self.history_table.setMaximumHeight(170)
+
+        layout.addLayout(listening_row)
+        layout.addWidget(self.playback_label)
+        layout.addWidget(self.history_table)
+        return box
 
     def _build_results(self) -> QGroupBox:
         box = QGroupBox("Top candidates")
@@ -496,6 +536,9 @@ class MainWindow(QMainWindow):
             self.current_session = result
             self._populate_analysis(result.analysis)
             self._populate_session(result)
+            if self.current_output_dir is not None:
+                self.history_store.append(result, self.current_output_dir)
+            self._load_history()
             self.status_label.setText(
                 f"Optimization complete. Session {result.session_id} is ready for review."
             )
@@ -623,10 +666,59 @@ class MainWindow(QMainWindow):
         self._populate_best_candidate(None)
         self._update_actions()
 
+    def _load_history(self) -> None:
+        entries = self.history_store.read_all()
+        self.history_table.setRowCount(len(entries))
+        for row, entry in enumerate(entries):
+            values = [
+                entry.created_at.replace("T", " ")[:19],
+                entry.session_id,
+                entry.mode.title(),
+                (
+                    f"{entry.best_preset} ({entry.best_score:.1f})"
+                    if entry.best_preset is not None and entry.best_score is not None
+                    else "n/a"
+                ),
+                Path(entry.source_path).name,
+            ]
+            for col, value in enumerate(values):
+                self.history_table.setItem(row, col, QTableWidgetItem(value))
+        self.history_table.resizeColumnsToContents()
+
+    def _play_source(self) -> None:
+        input_path = self.input_edit.text().strip()
+        if not input_path:
+            self._show_error("Choose a source file before playback.")
+            return
+        self._start_playback(Path(input_path), "A (source)")
+
+    def _play_selected_candidate(self) -> None:
+        candidate = self._selected_candidate()
+        if candidate is None:
+            self._show_error("Select a candidate to audition B.")
+            return
+        self._start_playback(candidate.output_path, f"B ({candidate.preset.name})")
+
+    def _start_playback(self, path: Path, label: str) -> None:
+        if not path.exists():
+            self._show_error(f"Cannot play missing file: {path}")
+            return
+        self.audio_player.setSource(QUrl.fromLocalFile(str(path)))
+        self.audio_player.play()
+        self.current_playback = str(path)
+        self.playback_label.setText(f"Now playing {label}: {path.name}")
+
+    def _stop_playback(self) -> None:
+        self.audio_player.stop()
+        self.current_playback = None
+        self.playback_label.setText("Playback stopped.")
+
     def _set_busy(self, busy: bool) -> None:
         self.analyze_button.setDisabled(busy)
         self.optimize_button.setDisabled(busy)
         self.export_button.setDisabled(busy or self._selected_candidate() is None)
+        self.play_source_button.setDisabled(busy)
+        self.play_candidate_button.setDisabled(busy)
         self.mode_combo.setDisabled(busy)
         self.input_edit.setDisabled(busy)
         self.output_edit.setDisabled(busy)
