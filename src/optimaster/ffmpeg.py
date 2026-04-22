@@ -1,10 +1,15 @@
 from __future__ import annotations
 
-import json
 import re
 import subprocess
 from pathlib import Path
 
+from optimaster.errors import (
+    FfmpegExecutionError,
+    FfmpegNotAvailableError,
+    InputFileError,
+    LoudnessParseError,
+)
 from optimaster.models import LoudnessMetrics
 
 
@@ -14,6 +19,8 @@ SUMMARY_RE = {
     "lra": re.compile(r"Input LRA:\s+(-?\d+(?:\.\d+)?)\s+LU"),
     "threshold": re.compile(r"Input Threshold:\s+(-?\d+(?:\.\d+)?)\s+LUFS"),
 }
+
+SUPPORTED_EXTENSIONS = {".wav", ".flac"}
 
 
 def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
@@ -25,33 +32,47 @@ def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
+def validate_input_file(file_path: str | Path) -> Path:
+    path = Path(file_path)
+    if not path.exists():
+        raise InputFileError(message="Input file does not exist", details=str(path))
+    if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
+        raise InputFileError(
+            message="Unsupported input format",
+            details=f"{path.suffix} (supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))})",
+        )
+    return path
+
+
 def assert_ffmpeg_available(ffmpeg_binary: str) -> None:
     result = _run([ffmpeg_binary, "-version"])
     if result.returncode != 0:
-        raise RuntimeError(f"FFmpeg not available: {result.stderr or result.stdout}".strip())
+        raise FfmpegNotAvailableError(details=(result.stderr or result.stdout).strip())
 
 
 def analyze_loudness(file_path: str | Path, ffmpeg_binary: str = "ffmpeg") -> LoudnessMetrics:
-    path = str(file_path)
+    path = validate_input_file(file_path)
     cmd = [
         ffmpeg_binary,
         "-hide_banner",
         "-nostats",
         "-i",
-        path,
+        str(path),
         "-af",
         "loudnorm=print_format=summary",
         "-f",
         "null",
-        "NUL" if Path(path).drive else "/dev/null",
+        "NUL" if path.drive else "/dev/null",
     ]
     result = _run(cmd)
     text = f"{result.stdout}\n{result.stderr}"
+    if result.returncode != 0:
+        raise FfmpegExecutionError(message="FFmpeg analysis failed", details=text.strip())
 
     def extract(name: str) -> float:
         match = SUMMARY_RE[name].search(text)
         if not match:
-            raise RuntimeError(f"Could not parse {name} from FFmpeg output:\n{text}")
+            raise LoudnessParseError(details=text.strip())
         return float(match.group(1))
 
     return LoudnessMetrics(
@@ -68,16 +89,17 @@ def render_candidate(
     ffmpeg_filter: str,
     ffmpeg_binary: str = "ffmpeg",
 ) -> None:
+    input_validated = validate_input_file(input_path)
     cmd = [
         ffmpeg_binary,
         "-hide_banner",
         "-y",
         "-i",
-        str(input_path),
+        str(input_validated),
         "-af",
         ffmpeg_filter,
         str(output_path),
     ]
     result = _run(cmd)
     if result.returncode != 0:
-        raise RuntimeError(f"FFmpeg render failed:\n{result.stderr or result.stdout}")
+        raise FfmpegExecutionError(message="FFmpeg render failed", details=(result.stderr or result.stdout).strip())

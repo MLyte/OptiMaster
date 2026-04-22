@@ -2,12 +2,12 @@
 
 Local audio finishing assistant for hot premaster files.
 
-OptiMaster is a small Python app that automates the workflow we tested manually:
+OptiMaster is a Python app that automates a prudent, reproducible finishing workflow:
 - analyze an input WAV/FLAC with FFmpeg
-- generate several safe mastering candidates
-- re-analyze each candidate
-- score them
-- recommend the most balanced result
+- classify the source profile (very hot, almost ready, etc.)
+- generate restrained mastering candidates adapted to the profile
+- re-analyze each candidate and score them
+- recommend the most balanced result while keeping final choice human
 
 It is intentionally modest: it does **not** pretend to create a universal "perfect master".
 It helps you find the best local, safe, repeatable finishing pass for a given export.
@@ -18,11 +18,12 @@ MVP:
 - CLI first
 - local only
 - FFmpeg-based
-- configurable presets
+- source-aware candidate selection
+- Safe / Balanced / Louder modes
 - analysis + scoring + export
+- desktop GUI v0 for import, analysis, ranking, and export
 
 Planned later:
-- small desktop GUI
 - batch processing
 - listening notes / preference learning
 - waveform preview
@@ -38,8 +39,9 @@ using measurable rules.
 ```text
 OptiMaster/
 ├── README.md
+├── PROJECT_PRODUCTION_PLAN.md
+├── TASKS_MASTER.md
 ├── pyproject.toml
-├── .gitignore
 ├── config.example.yaml
 ├── src/
 │   └── optimaster/
@@ -47,13 +49,14 @@ OptiMaster/
 │       ├── __main__.py
 │       ├── cli.py
 │       ├── config.py
-│       ├── models.py
+│       ├── errors.py
 │       ├── ffmpeg.py
+│       ├── gui.py
+│       ├── models.py
+│       ├── pipeline.py
 │       ├── presets.py
 │       ├── scoring.py
-│       └── pipeline.py
-├── scripts/
-│   └── bootstrap.ps1
+│       └── service.py
 └── tests/
     └── test_scoring.py
 ```
@@ -67,6 +70,7 @@ pip install -e .
 ```
 
 FFmpeg must be available on `PATH`.
+The GUI also requires `PySide6`, which is included in the project dependencies.
 
 Test:
 ```bash
@@ -87,6 +91,14 @@ Run the full optimization pipeline:
 optimaster optimize "C:\path\to\track.wav" --output-dir ".\renders"
 ```
 
+Choose the optimization mode:
+
+```bash
+optimaster optimize "C:\path\to\track.wav" --mode safe
+optimaster optimize "C:\path\to\track.wav" --mode balanced
+optimaster optimize "C:\path\to\track.wav" --mode louder
+```
+
 Show the built-in presets:
 
 ```bash
@@ -99,14 +111,29 @@ Use a YAML config:
 optimaster optimize "C:\path\to\track.wav" --config ".\config.example.yaml"
 ```
 
+Launch the desktop GUI:
+
+```bash
+optimaster-gui
+```
+
+Current GUI v0 includes:
+- drag and drop or file picker for WAV/FLAC
+- source analysis with profile and diagnostics
+- Safe / Balanced / Louder mode selection
+- full optimization run with progress feedback
+- ranked candidate table with scoring reasons
+- export of the selected rendered candidate
+
 ## Built-in logic
 
 The default strategy is:
+- classify source behavior before processing
 - if the source file is already hot, avoid aggressive gain-up presets
 - if true peak is too close to zero, prefer trim / safe limit presets
 - preserve dynamics when LRA is already healthy
 - penalize outputs with unsafe true peaks
-- prefer outputs that remain musically close to the source
+- penalize transformations too far from source loudness
 
 ## Example outputs
 
@@ -114,14 +141,6 @@ OptiMaster writes:
 - rendered candidate WAV files
 - `analysis.json`
 - `ranking.json`
-
-## Suggested name
-
-**OptiMaster** works well:
-- short
-- clear
-- sounds like a utility, not fake magic
-- good fit for a CLI and a GUI later
 
 ## License
 

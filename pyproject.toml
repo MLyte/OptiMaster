@@ -14,10 +14,12 @@ authors = [
 ]
 dependencies = [
   "PyYAML>=6.0.1",
+  "PySide6>=6.7",
 ]
 
 [project.scripts]
 optimaster = "optimaster.cli:main"
+optimaster-gui = "optimaster.gui:run"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
