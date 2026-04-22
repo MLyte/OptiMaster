@@ -10,6 +10,7 @@ from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent
 from PySide6.QtWidgets import (
     QApplication,
     QAbstractItemView,
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QFormLayout,
@@ -52,6 +53,8 @@ class WorkerRequest:
     output_dir: str
     mode: OptimizationMode
     config_path: str | None
+    destination_profile: str
+    strict_true_peak: bool
 
 
 class DropFrame(QFrame):
@@ -107,6 +110,8 @@ class EngineWorker(QObject):
                     input_file=self.request.input_file,
                     output_dir=self.request.output_dir,
                     mode=self.request.mode,
+                    destination_profile=self.request.destination_profile,
+                    strict_true_peak=self.request.strict_true_peak,
                     progress_callback=self._emit_progress,
                 )
             self.finished.emit(result)
@@ -128,6 +133,11 @@ class MainWindow(QMainWindow):
         self.current_analysis: SourceAnalysis | None = None
         self.current_session: OptimizationSession | None = None
         self.current_output_dir: Path | None = None
+        self.destination_profiles = {
+            "Streaming prudent": "streaming_prudent",
+            "Club / Loud": "club_loud",
+            "Archive safe": "archive_safe",
+        }
         self._thread: QThread | None = None
         self._worker: EngineWorker | None = None
 
@@ -194,6 +204,11 @@ class MainWindow(QMainWindow):
         for mode in OptimizationMode:
             self.mode_combo.addItem(mode.value.title(), mode)
         self.mode_combo.setCurrentIndex(1)
+        self.destination_combo = QComboBox()
+        for label, value in self.destination_profiles.items():
+            self.destination_combo.addItem(label, value)
+        self.strict_tp_checkbox = QCheckBox("True peak strict (safer after encoding)")
+        self.strict_tp_checkbox.setChecked(True)
 
         output_button = QPushButton("Choose output")
         output_button.clicked.connect(self._browse_output_dir)
@@ -209,22 +224,25 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(QLabel("Optimization mode"), 0, 0)
         layout.addWidget(self.mode_combo, 0, 1)
-        layout.addWidget(QLabel("Output folder"), 1, 0)
-        layout.addWidget(self.output_edit, 1, 1)
-        layout.addWidget(output_button, 1, 2)
-        layout.addWidget(QLabel("Config file"), 2, 0)
-        layout.addWidget(self.config_edit, 2, 1)
-        layout.addWidget(config_button, 2, 2)
-        layout.addWidget(self.analyze_button, 3, 0)
-        layout.addWidget(self.optimize_button, 3, 1)
-        layout.addWidget(self.export_button, 3, 2)
+        layout.addWidget(QLabel("Destination profile"), 1, 0)
+        layout.addWidget(self.destination_combo, 1, 1)
+        layout.addWidget(self.strict_tp_checkbox, 1, 2)
+        layout.addWidget(QLabel("Output folder"), 2, 0)
+        layout.addWidget(self.output_edit, 2, 1)
+        layout.addWidget(output_button, 2, 2)
+        layout.addWidget(QLabel("Config file"), 3, 0)
+        layout.addWidget(self.config_edit, 3, 1)
+        layout.addWidget(config_button, 3, 2)
+        layout.addWidget(self.analyze_button, 4, 0)
+        layout.addWidget(self.optimize_button, 4, 1)
+        layout.addWidget(self.export_button, 4, 2)
 
         self.status_label = QLabel("Ready for analysis.")
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
-        layout.addWidget(self.status_label, 4, 0, 1, 2)
-        layout.addWidget(self.progress_bar, 4, 2)
+        layout.addWidget(self.status_label, 5, 0, 1, 2)
+        layout.addWidget(self.progress_bar, 5, 2)
         return box
 
     def _build_summary(self) -> QHBoxLayout:
@@ -239,13 +257,18 @@ class MainWindow(QMainWindow):
             "true_peak": QLabel("--"),
             "lra": QLabel("--"),
             "diagnostics": QLabel("Run an analysis to inspect the source profile."),
+            "acoustic_note": QLabel(
+                "Meters are technical indicators. Final validation depends on monitoring level and room acoustics."
+            ),
         }
         self.metric_labels["diagnostics"].setWordWrap(True)
+        self.metric_labels["acoustic_note"].setWordWrap(True)
         source_layout.addRow("Profile", self.metric_labels["profile"])
         source_layout.addRow("Integrated LUFS", self.metric_labels["integrated"])
         source_layout.addRow("True Peak", self.metric_labels["true_peak"])
         source_layout.addRow("LRA", self.metric_labels["lra"])
         source_layout.addRow("Diagnostics", self.metric_labels["diagnostics"])
+        source_layout.addRow("Engineering note", self.metric_labels["acoustic_note"])
 
         self.best_box = QGroupBox("Recommended candidate")
         best_layout = QFormLayout(self.best_box)
@@ -442,6 +465,8 @@ class MainWindow(QMainWindow):
             output_dir=output_dir,
             mode=mode,
             config_path=config_path,
+            destination_profile=self.destination_combo.currentData(),
+            strict_true_peak=self.strict_tp_checkbox.isChecked(),
         )
 
     def _start_worker(self, request: WorkerRequest) -> None:
@@ -512,7 +537,10 @@ class MainWindow(QMainWindow):
         self.metric_labels["integrated"].setText(format_metric(metrics.integrated_lufs, "LUFS"))
         self.metric_labels["true_peak"].setText(format_metric(metrics.true_peak_dbtp, "dBTP"))
         self.metric_labels["lra"].setText(format_metric(metrics.lra_lu, "LU"))
-        self.metric_labels["diagnostics"].setText(" | ".join(analysis.diagnostics))
+        diagnostics = list(analysis.diagnostics)
+        if analysis.profile.value in {"very_hot", "almost_ready"}:
+            diagnostics.append("Source already hot: prioritize transparent and minimal moves.")
+        self.metric_labels["diagnostics"].setText(" | ".join(diagnostics))
 
     def _populate_session(self, session: OptimizationSession) -> None:
         self.results_table.setRowCount(len(session.candidates))
@@ -556,7 +584,10 @@ class MainWindow(QMainWindow):
                 ]
             )
         )
-        self.best_labels["reasons"].setText(" | ".join(candidate.reasons))
+        top_reasons = candidate.reasons[:3]
+        if len(candidate.reasons) > 3:
+            top_reasons.append("Further details available in candidate panel.")
+        self.best_labels["reasons"].setText(" | ".join(top_reasons))
         self.best_labels["path"].setText(str(candidate.output_path))
 
     def _update_selected_candidate_details(self) -> None:
@@ -576,10 +607,25 @@ class MainWindow(QMainWindow):
                 f"TP {selected.output_metrics.true_peak_dbtp:.1f}, "
                 f"LRA {selected.output_metrics.lra_lu:.1f}"
             ),
+            (
+                "Delta vs source: "
+                f"LUFS {selected.output_metrics.integrated_lufs - selected.source_metrics.integrated_lufs:+.1f}, "
+                f"LRA {selected.output_metrics.lra_lu - selected.source_metrics.lra_lu:+.1f}"
+            ),
             "",
             "Reasons:",
         ]
         lines.extend(f"- {reason}" for reason in selected.reasons)
+        lines.extend(
+            [
+                "",
+                "Listening checklist:",
+                "- Compare at matched loudness when possible.",
+                "- Check transients (kick/snare attack) for pumping or flattening.",
+                "- Check vocal harshness/sibilance after limiting.",
+                "- Validate low-end translation on a second system or headphones.",
+            ]
+        )
         self.details_panel.setPlainText("\n".join(lines))
         if self.current_session and self.current_session.best_candidate is selected:
             self._populate_best_candidate(selected)
@@ -628,6 +674,8 @@ class MainWindow(QMainWindow):
         self.optimize_button.setDisabled(busy)
         self.export_button.setDisabled(busy or self._selected_candidate() is None)
         self.mode_combo.setDisabled(busy)
+        self.destination_combo.setDisabled(busy)
+        self.strict_tp_checkbox.setDisabled(busy)
         self.input_edit.setDisabled(busy)
         self.output_edit.setDisabled(busy)
         self.config_edit.setDisabled(busy)
