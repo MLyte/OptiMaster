@@ -35,17 +35,17 @@ Ce document est derive de `PROJECT_PRODUCTION_PLAN.md` et sert de suivi executab
 - [~] Affiner la hierarchie visuelle, les microcopies et le polish de l'interface.
 
 ## Phase 4 - Finitions d'usage
-- [ ] A/B listening basique.
-- [ ] Historique local leger des sessions.
-- [ ] Ameliorations visuelles et microcopies.
+- [x] A/B listening basique.
+- [x] Historique local leger des sessions.
+- [x] Ameliorations visuelles et microcopies.
 
 ## Phase 5 - Packaging Windows
-- [ ] Decider PyInstaller vs Nuitka (benchmark demarrage + taille binaire).
-- [ ] Integration et verification FFmpeg bundle.
-- [ ] Procedure build/release reproductible.
+- [x] Decider PyInstaller vs Nuitka (benchmark demarrage + taille binaire).
+- [~] Integration et verification FFmpeg bundle.
+- [x] Procedure build/release reproductible.
 
 ## Phase 6 - QA/Beta/1.0
-- [ ] Definir corpus audio de validation.
-- [ ] Executer matrice de tests manuels sur parcours principal.
+- [x] Definir corpus audio de validation.
+- [~] Executer matrice de tests manuels sur parcours principal.
 - [ ] Ajuster scoring/presets d'apres retours pilote.
 - [ ] Preparer release candidate et 1.0.
