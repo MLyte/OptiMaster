@@ -77,6 +77,49 @@ Test:
 ffmpeg -version
 ```
 
+### Windows note (PowerShell)
+
+If `pip` prints warnings like:
+
+- `optimaster.exe ... is installed in ...\Python\Python314\Scripts which is not on PATH`
+- `optimaster-gui.exe ... is installed in ...\Python\Python314\Scripts which is not on PATH`
+
+then the install worked, but PowerShell cannot find the launcher scripts yet.
+
+You have 3 options:
+
+1. Run with Python module syntax (works immediately):
+
+```powershell
+python -m optimaster presets
+python -m optimaster optimize "C:\path\to\track.wav"
+python -m optimaster.gui
+```
+
+2. Use full script path directly:
+
+```powershell
+& "$env:APPDATA\Python\Python314\Scripts\optimaster.exe" presets
+& "$env:APPDATA\Python\Python314\Scripts\optimaster-gui.exe"
+```
+
+3. Add the scripts directory to your user `PATH` (recommended long term), then reopen PowerShell:
+
+```powershell
+[Environment]::SetEnvironmentVariable(
+  "Path",
+  $env:Path + ";$env:APPDATA\Python\Python314\Scripts",
+  "User"
+)
+```
+
+After reopening your terminal, these commands should work:
+
+```powershell
+optimaster presets
+optimaster-gui
+```
+
 ## Quick start
 
 Analyze a file:
