@@ -31,6 +31,7 @@ Ce document est derive de `PROJECT_PRODUCTION_PLAN.md` et sert de suivi executab
 - [x] Creer le squelette de l'application PySide6 (fenetre principale + worker thread).
 - [x] Implementer le parcours complet import -> analyse -> optimisation -> top 3 -> export.
 - [x] Ajouter gestion d'etats UI: vide, analyse en cours, optimisation en cours, erreurs.
+- [x] Ajouter une couverture de tests unitaires sur les callbacks de progression service (analyse + optimisation).
 - [~] Affiner la hierarchie visuelle, les microcopies et le polish de l'interface.
 
 ## Phase 4 - Finitions d'usage
