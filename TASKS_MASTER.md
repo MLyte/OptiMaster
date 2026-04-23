@@ -34,9 +34,9 @@ Ce document est derive de `PROJECT_PRODUCTION_PLAN.md` et sert de suivi executab
 - [~] Affiner la hierarchie visuelle, les microcopies et le polish de l'interface.
 
 ## Phase 4 - Finitions d'usage
-- [ ] A/B listening basique.
-- [ ] Historique local leger des sessions.
-- [ ] Ameliorations visuelles et microcopies.
+- [x] A/B listening basique (notes d'ecoute + notation).
+- [x] Historique local leger des sessions (preferences JSON).
+- [x] Ameliorations visuelles et microcopies (preview waveform + controles GUI).
 
 ## Phase 5 - Packaging Windows
 - [ ] Decider PyInstaller vs Nuitka (benchmark demarrage + taille binaire).

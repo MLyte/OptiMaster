@@ -15,6 +15,7 @@ from optimaster.models import (
     SourceAnalysis,
     SourceProfile,
 )
+from optimaster.preferences import PreferenceStore
 from optimaster.presets import select_presets_for_profile
 from optimaster.scoring import classify_source, score_candidate
 
@@ -33,6 +34,7 @@ ProgressCallback = Callable[[str, int], None]
 @dataclass(slots=True)
 class EngineService:
     config: AppConfig
+    preference_path: Path | None = None
 
     def analyze_source(
         self,
@@ -55,6 +57,14 @@ class EngineService:
             diagnostics=diagnostics,
         )
 
+
+
+    def add_listening_note(self, preset_name: str, rating: int) -> Path:
+        preference_path = self.preference_path or (Path.cwd() / "renders" / "preferences.json")
+        store = PreferenceStore(preference_path)
+        store.save_note(preset_name=preset_name, rating=rating)
+        return preference_path
+
     def optimize(
         self,
         input_file: str | Path,
@@ -74,6 +84,9 @@ class EngineService:
             enabled_presets=self.config.enabled_presets,
         )
         self._notify(progress_callback, f"Selected {len(presets)} candidate presets", 45)
+
+        preference_path = self.preference_path or (out_dir / "preferences.json")
+        preset_bias = PreferenceStore(preference_path).load()
 
         results: list[CandidateResult] = []
         total_presets = max(len(presets), 1)
@@ -98,6 +111,10 @@ class EngineService:
                 source_metrics=analysis.metrics,
                 mode=selected_mode,
             )
+            bias = preset_bias.get(preset.name, 0.0)
+            if abs(bias) > 0:
+                score += bias
+                reasons.append(f"Preference bias {bias:+.2f} from listening notes")
             results.append(
                 CandidateResult(
                     preset=preset,

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QThread, Qt, Signal
-from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent
+from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QAbstractItemView,
@@ -27,12 +27,14 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
 from optimaster.config import load_config
 from optimaster.errors import AppError
+from optimaster.ffmpeg import render_waveform_preview
 from optimaster.models import CandidateResult, OptimizationMode, OptimizationSession, SourceAnalysis
 from optimaster.service import EngineService
 
@@ -128,6 +130,7 @@ class MainWindow(QMainWindow):
         self.current_analysis: SourceAnalysis | None = None
         self.current_session: OptimizationSession | None = None
         self.current_output_dir: Path | None = None
+        self.waveform_preview_path: Path | None = None
         self._thread: QThread | None = None
         self._worker: EngineWorker | None = None
 
@@ -246,6 +249,11 @@ class MainWindow(QMainWindow):
         source_layout.addRow("True Peak", self.metric_labels["true_peak"])
         source_layout.addRow("LRA", self.metric_labels["lra"])
         source_layout.addRow("Diagnostics", self.metric_labels["diagnostics"])
+        self.waveform_label = QLabel("Waveform preview appears after file selection.")
+        self.waveform_label.setMinimumHeight(130)
+        self.waveform_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.waveform_label.setObjectName("waveformPreview")
+        source_layout.addRow("Waveform", self.waveform_label)
 
         self.best_box = QGroupBox("Recommended candidate")
         best_layout = QFormLayout(self.best_box)
@@ -258,11 +266,18 @@ class MainWindow(QMainWindow):
         }
         self.best_labels["reasons"].setWordWrap(True)
         self.best_labels["path"].setWordWrap(True)
+        self.rating_spin = QSpinBox()
+        self.rating_spin.setRange(1, 5)
+        self.rating_spin.setValue(3)
+        self.save_note_button = QPushButton("Save listening note")
+        self.save_note_button.clicked.connect(self._save_listening_note)
         best_layout.addRow("Preset", self.best_labels["name"])
         best_layout.addRow("Score", self.best_labels["score"])
         best_layout.addRow("Metrics", self.best_labels["metrics"])
         best_layout.addRow("Why it ranked first", self.best_labels["reasons"])
         best_layout.addRow("Rendered file", self.best_labels["path"])
+        best_layout.addRow("Rating (1-5)", self.rating_spin)
+        best_layout.addRow("Preferences", self.save_note_button)
 
         layout.addWidget(self.source_box, stretch=1)
         layout.addWidget(self.best_box, stretch=1)
@@ -340,6 +355,13 @@ class MainWindow(QMainWindow):
                 font-weight: 700;
                 color: #f8fafb;
             }
+            #waveformPreview {
+                border: 1px solid #31404b;
+                border-radius: 8px;
+                background: #18212a;
+                color: #91a0ab;
+                padding: 6px;
+            }
             QPushButton {
                 background: #1f8f7b;
                 border: 0;
@@ -414,6 +436,7 @@ class MainWindow(QMainWindow):
         default_dir = Path(path).resolve().parent / "renders"
         self.output_edit.setText(str(default_dir))
         self.status_label.setText("Source file selected. Ready to analyze.")
+        self._update_waveform_preview(Path(path))
         self.progress_bar.setValue(0)
         self._update_actions()
 
@@ -486,6 +509,7 @@ class MainWindow(QMainWindow):
             self.current_analysis = result
             self.current_session = None
             self._populate_analysis(result)
+            self._update_waveform_preview(result.source_path)
             self._clear_results()
             self.status_label.setText("Analysis complete.")
             self.progress_bar.setValue(100)
@@ -616,6 +640,44 @@ class MainWindow(QMainWindow):
             "Export complete",
             f"Copied {candidate.preset.name} to:\n{destination}",
         )
+
+
+
+    def _update_waveform_preview(self, source_path: Path) -> None:
+        try:
+            preview_dir = Path(self.output_edit.text().strip() or source_path.parent / "renders")
+            preview_path = preview_dir / f"{source_path.stem}_waveform.png"
+            config = load_config(self.config_edit.text().strip() or None)
+            created = render_waveform_preview(
+                input_path=source_path,
+                output_path=preview_path,
+                ffmpeg_binary=config.ffmpeg_binary,
+            )
+            self.waveform_preview_path = created
+            pixmap = QPixmap(str(created))
+            self.waveform_label.setPixmap(
+                pixmap.scaled(
+                    self.waveform_label.width(),
+                    130,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
+            self.waveform_label.setText("")
+        except Exception:
+            self.waveform_label.setPixmap(QPixmap())
+            self.waveform_label.setText("Waveform preview unavailable for this file.")
+
+    def _save_listening_note(self) -> None:
+        candidate = self._selected_candidate()
+        if candidate is None:
+            self._show_error("Select a candidate to save a listening note.")
+            return
+        config = load_config(self.config_edit.text().strip() or None)
+        preferences_path = (self.current_output_dir or Path.cwd() / "renders") / "preferences.json"
+        service = EngineService(config=config, preference_path=preferences_path)
+        service.add_listening_note(candidate.preset.name, self.rating_spin.value())
+        self.status_label.setText(f"Saved note for {candidate.preset.name} in {preferences_path}")
 
     def _clear_results(self) -> None:
         self.results_table.setRowCount(0)

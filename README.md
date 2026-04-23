@@ -23,10 +23,10 @@ MVP:
 - analysis + scoring + export
 - desktop GUI v0 for import, analysis, ranking, and export
 
-Planned later:
-- batch processing
-- listening notes / preference learning
-- waveform preview
+Implemented in this version:
+- batch processing (`optimaster optimize-batch ...`)
+- listening notes / preference learning (`optimaster add-note ...`, plus score bias)
+- waveform preview in GUI source panel
 
 ## Why this project exists
 
