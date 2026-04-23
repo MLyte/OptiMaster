@@ -10,7 +10,7 @@ Ce document est derive de `PROJECT_PRODUCTION_PLAN.md` et sert de suivi executab
 ## Phase 0 - Cadrage produit
 - [x] Positionnement produit clarifie dans la documentation principale (`README.md` + plan produit).
 - [x] Scope MVP confirme: Windows desktop local-first, sans compte, sans cloud.
-- [~] Microcopies UI utilisateur a formaliser dans une spec dediee GUI.
+- [x] Microcopies UI utilisateur formalisees dans une spec dediee GUI (`GUI_MICROCOPY_SPEC.md`).
 
 ## Phase 1 - Durcissement du moteur
 - [x] Separation moteur/CLI via une couche de service (`EngineService`).
