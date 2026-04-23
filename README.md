@@ -66,8 +66,12 @@ OptiMaster/
 Python 3.11+ recommended.
 
 ```bash
-pip install -e .
+python -m pip install -U pip setuptools wheel
+python -m pip install --no-build-isolation -e .
 ```
+
+If your environment blocks downloads for isolated build dependencies, keep
+`--no-build-isolation` enabled as above.
 
 FFmpeg must be available on `PATH`.
 The GUI also requires `PySide6`, which is included in the project dependencies.
