@@ -8,6 +8,13 @@ pytest-cache-files-*/
 .ruff_cache/
 .venv/
 venv/
+.env
+.env.*
+!.env.example
+*.local
+*.log
+*.pem
+*.key
 dist/
 build/
 release_artifacts/

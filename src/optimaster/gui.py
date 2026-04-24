@@ -1332,10 +1332,11 @@ class MainWindow(QMainWindow):
         self.best_box = QGroupBox("Best measured compromise")
         self.best_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         best_layout = QGridLayout(self.best_box)
+        best_layout.setContentsMargins(18, 18, 18, 18)
         best_layout.setColumnStretch(0, 0)
         best_layout.setColumnStretch(1, 1)
         best_layout.setHorizontalSpacing(14)
-        best_layout.setVerticalSpacing(10)
+        best_layout.setVerticalSpacing(14)
         self.best_labels = {
             "name": QLabel("No candidate yet"),
             "score": QLabel("--"),
@@ -1348,16 +1349,19 @@ class MainWindow(QMainWindow):
             label.setWordWrap(True)
             label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.MinimumExpanding)
-        self.best_labels["reasons"].setMinimumHeight(64)
-        self.best_labels["path"].setMinimumHeight(42)
+        self.best_labels["reasons"].setMinimumHeight(76)
+        self.best_labels["path"].setMinimumHeight(48)
         self.rating_spin = QSpinBox()
         self.rating_spin.setRange(1, 5)
         self.rating_spin.setValue(3)
+        self.rating_spin.setMinimumHeight(44)
         self.listen_selected_button = QPushButton("Listen to selected version")
+        self.listen_selected_button.setMinimumHeight(44)
         set_lucide_icon(self.listen_selected_button, "headphones")
         self.listen_selected_button.clicked.connect(lambda: self.workflow_tabs.setCurrentIndex(2))
         self.save_note_button = QPushButton("Save listening note")
         self.save_note_button.setObjectName("secondaryAction")
+        self.save_note_button.setMinimumHeight(44)
         set_lucide_icon(self.save_note_button, "save")
         self.save_note_button.clicked.connect(self._save_listening_note)
 
@@ -1379,6 +1383,8 @@ class MainWindow(QMainWindow):
         add_best_row(5, "next", "Next", self.listen_selected_button)
         add_best_row(6, "rating", "Rating (1-5)", self.rating_spin)
         add_best_row(7, "preferences", "Preferences", self.save_note_button)
+        for row in (5, 6, 7):
+            best_layout.setRowMinimumHeight(row, 48)
         return self.best_box
 
     def _build_listening_tools(self) -> QGroupBox:
@@ -2868,7 +2874,7 @@ class MainWindow(QMainWindow):
     def _toggle_history(self) -> None:
         visible = self.history_table.isHidden()
         self.history_table.setVisible(visible)
-        self.history_button.setText("Hide session history" if visible else "Show session history")
+        self.history_button.setText(self._t("hide_history") if visible else self._t("show_history"))
 
     def _play_source(self) -> None:
         input_path = self.input_edit.text().strip()
@@ -2931,11 +2937,11 @@ class MainWindow(QMainWindow):
         has_candidates = bool(self.current_session and self.current_session.candidates)
         has_candidate = self._selected_candidate() is not None
         if has_input and input_path is not None:
-            self.selected_source_label.setText(f"Selected source: {input_path.name}. Next: analyze it.")
+            self.selected_source_label.setText(self._t("selected_source_next", name=input_path.name))
         if has_analysis:
             self.render_context_label.setText(self._render_story_text())
         self.analyze_button.setEnabled(has_input and not has_analysis and self._thread is None)
-        self.analyze_button.setText("Analyzed" if has_analysis else "Analyze source")
+        self.analyze_button.setText(self._t("analyzed") if has_analysis else self._t("analyze_source"))
         self.optimize_button.setEnabled(has_analysis and self._thread is None)
         self.export_button.setEnabled(self._thread is None and has_candidate)
         self.new_analysis_button.setEnabled(self._thread is None)
@@ -2964,7 +2970,7 @@ class MainWindow(QMainWindow):
         if not has_analysis:
             self.source_box.setVisible(False)
             if hasattr(self, "source_review_button"):
-                self.source_review_button.setText("Review source analysis")
+                self.source_review_button.setText(self._t("review_source"))
         self.render_box.setVisible(has_analysis)
         for widget in self.mastering_widgets:
             widget.setVisible(has_analysis)
@@ -3031,15 +3037,15 @@ class MainWindow(QMainWindow):
 
     def _render_story_text(self) -> str:
         if self.current_analysis is None:
-            return "Source ready. Choose a target, then render versions."
+            return self._t("source_ready_story")
         metrics = self.current_analysis.metrics
         source_name = self.current_analysis.source_path.name
-        return (
-            f"{source_name} is analyzed: "
-            f"{metrics.integrated_lufs:.1f} LUFS, "
-            f"{metrics.true_peak_dbtp:.1f} dBTP, "
-            f"{metrics.lra_lu:.1f} LU dynamics. "
-            "Choose an objective, then render versions."
+        return self._t(
+            "analyzed_story",
+            name=source_name,
+            lufs=metrics.integrated_lufs,
+            peak=metrics.true_peak_dbtp,
+            lra=metrics.lra_lu,
         )
 
     def _show_error(self, message: str) -> None:
