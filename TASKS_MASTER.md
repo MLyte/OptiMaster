@@ -35,8 +35,11 @@ Ce document est derive de `PROJECT_PRODUCTION_PLAN.md` et sert de suivi executab
 - [~] Affiner la hierarchie visuelle, les microcopies et le polish de l'interface.
 
 ## Phase 4 - Finitions d'usage
+- [x] Batch processing CLI (`optimaster optimize-batch`).
 - [x] A/B listening basique.
 - [x] Historique local leger des sessions.
+- [x] Notes d'ecoute / preference learning (`preferences.json` + biais de score).
+- [x] Preview waveform dans la GUI.
 - [x] Ameliorations visuelles et microcopies.
 
 ## Phase 5 - Packaging Windows

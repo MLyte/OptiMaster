@@ -103,3 +103,32 @@ def render_candidate(
     result = _run(cmd)
     if result.returncode != 0:
         raise FfmpegExecutionError(message="FFmpeg render failed", details=(result.stderr or result.stdout).strip())
+
+
+def render_waveform_preview(
+    input_path: str | Path,
+    output_path: str | Path,
+    ffmpeg_binary: str = "ffmpeg",
+) -> Path:
+    input_validated = validate_input_file(input_path)
+    destination = Path(output_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        ffmpeg_binary,
+        "-hide_banner",
+        "-y",
+        "-i",
+        str(input_validated),
+        "-filter_complex",
+        "showwavespic=s=1180x180:colors=0x1f8f7b",
+        "-frames:v",
+        "1",
+        str(destination),
+    ]
+    result = _run(cmd)
+    if result.returncode != 0:
+        raise FfmpegExecutionError(
+            message="FFmpeg waveform preview failed",
+            details=(result.stderr or result.stdout).strip(),
+        )
+    return destination

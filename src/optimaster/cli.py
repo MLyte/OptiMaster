@@ -7,7 +7,6 @@ from pathlib import Path
 from optimaster.config import load_config
 from optimaster.errors import AppError
 from optimaster.models import OptimizationMode
-from optimaster.pipeline import run_pipeline
 from optimaster.presets import BUILTIN_PRESETS
 from optimaster.service import EngineService
 
@@ -33,6 +32,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optimization mode: safe, balanced, or louder",
     )
 
+    batch = sub.add_parser("optimize-batch", help="Run optimization for multiple source files")
+    batch.add_argument("input_files", nargs="+", help="WAV/FLAC files to optimize")
+    batch.add_argument("--output-dir", default="renders")
+    batch.add_argument(
+        "--mode",
+        choices=[mode.value for mode in OptimizationMode],
+        default=None,
+        help="Optimization mode: safe, balanced, or louder",
+    )
+
+    note = sub.add_parser("add-note", help="Add a listening note and rating for a preset")
+    note.add_argument("preset_name")
+    note.add_argument("--rating", type=int, required=True, choices=[1, 2, 3, 4, 5])
+    note.add_argument("--preferences", default="renders/preferences.json")
+
     return parser
 
 
@@ -54,10 +68,11 @@ def cmd_presets() -> int:
 def cmd_optimize(input_file: str, output_dir: str, mode: str | None, config_path: str | None) -> int:
     cfg = load_config(config_path)
     selected_mode = OptimizationMode(mode) if mode else cfg.default_mode
-    results = run_pipeline(input_file=input_file, output_dir=output_dir, config=cfg, mode=selected_mode)
+    service = EngineService(config=cfg)
+    session = service.optimize(input_file=input_file, output_dir=output_dir, mode=selected_mode)
 
     print("\nOptiMaster ranking\n")
-    for idx, result in enumerate(results, start=1):
+    for idx, result in enumerate(session.candidates, start=1):
         m = result.output_metrics
         print(
             f"{idx}. {result.preset.name} | score={result.score} | "
@@ -65,6 +80,29 @@ def cmd_optimize(input_file: str, output_dir: str, mode: str | None, config_path
         )
         print(f"   {result.output_path}")
         print(f"   reasons: {'; '.join(result.reasons)}")
+    return 0
+
+
+def cmd_optimize_batch(input_files: list[str], output_dir: str, mode: str | None, config_path: str | None) -> int:
+    cfg = load_config(config_path)
+    service = EngineService(config=cfg)
+    selected_mode = OptimizationMode(mode) if mode else cfg.default_mode
+
+    print(f"Running batch on {len(input_files)} file(s)...")
+    for input_file in input_files:
+        source = Path(input_file)
+        target_dir = Path(output_dir) / source.stem
+        session = service.optimize(input_file=source, output_dir=target_dir, mode=selected_mode)
+        best = session.best_candidate.preset.name if session.best_candidate else "none"
+        print(f"- {source.name}: best={best} | session={session.session_id} | output={target_dir}")
+    return 0
+
+
+def cmd_add_note(preset_name: str, rating: int, preferences: str, config_path: str | None) -> int:
+    cfg = load_config(config_path)
+    service = EngineService(config=cfg, preference_path=Path(preferences))
+    path = service.add_listening_note(preset_name=preset_name, rating=rating)
+    print(f"Saved listening note for {preset_name} (rating={rating}) in {path}")
     return 0
 
 
@@ -79,6 +117,10 @@ def main() -> int:
             return cmd_presets()
         if args.command == "optimize":
             return cmd_optimize(args.input_file, args.output_dir, args.mode, args.config)
+        if args.command == "optimize-batch":
+            return cmd_optimize_batch(args.input_files, args.output_dir, args.mode, args.config)
+        if args.command == "add-note":
+            return cmd_add_note(args.preset_name, args.rating, args.preferences, args.config)
     except AppError as exc:
         print(str(exc))
         return 1

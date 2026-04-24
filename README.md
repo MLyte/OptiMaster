@@ -23,10 +23,10 @@ MVP:
 - analysis + scoring + export
 - desktop GUI v0 for import, analysis, ranking, and export
 
-Planned later:
-- batch processing
-- listening notes / preference learning
-- waveform preview
+Implemented in this version:
+- batch processing (`optimaster optimize-batch ...`)
+- listening notes / preference learning (`optimaster add-note ...`, plus score bias)
+- waveform preview in the GUI source panel
 
 ## Why this project exists
 
@@ -126,6 +126,12 @@ optimaster optimize "C:\path\to\track.wav" --mode balanced
 optimaster optimize "C:\path\to\track.wav" --mode louder
 ```
 
+### 3b) Run batch optimization
+
+```powershell
+optimaster optimize-batch "C:\path\to\a.wav" "C:\path\to\b.wav" --output-dir ".\renders"
+```
+
 ### 4) Afficher les presets
 
 ```powershell
@@ -156,6 +162,9 @@ Current GUI v0 includes:
 - Safe / Balanced / Louder mode selection
 - full optimization run with progress feedback
 - ranked candidate table with scoring reasons
+- waveform preview in the source summary
+- local session history and A/B listening playback
+- listening note capture for the selected candidate
 - export of the selected rendered candidate
 
 ## Audit "install now" (snapshot: 2026-04-22)

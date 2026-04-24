@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QThread, Qt, QUrl, Signal
-from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent
+from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent, QPixmap
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication,
@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QSizePolicy,
+    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -35,6 +36,7 @@ from PySide6.QtWidgets import (
 
 from optimaster.config import load_config
 from optimaster.errors import AppError
+from optimaster.ffmpeg import render_waveform_preview
 from optimaster.history import SessionHistoryStore
 from optimaster.models import CandidateResult, OptimizationMode, OptimizationSession, SourceAnalysis
 from optimaster.service import EngineService
@@ -55,12 +57,9 @@ class WorkerRequest:
     output_dir: str
     mode: OptimizationMode
     config_path: str | None
-<<<<<<< HEAD
-    source_analysis: SourceAnalysis | None = None
-=======
     destination_profile: str
     strict_true_peak: bool
->>>>>>> origin/main
+    source_analysis: SourceAnalysis | None = None
 
 
 class DropFrame(QFrame):
@@ -116,12 +115,9 @@ class EngineWorker(QObject):
                     input_file=self.request.input_file,
                     output_dir=self.request.output_dir,
                     mode=self.request.mode,
-<<<<<<< HEAD
                     source_analysis=self.request.source_analysis,
-=======
                     destination_profile=self.request.destination_profile,
                     strict_true_peak=self.request.strict_true_peak,
->>>>>>> origin/main
                     progress_callback=self._emit_progress,
                 )
             self.finished.emit(result)
@@ -143,6 +139,7 @@ class MainWindow(QMainWindow):
         self.current_analysis: SourceAnalysis | None = None
         self.current_session: OptimizationSession | None = None
         self.current_output_dir: Path | None = None
+        self.waveform_preview_path: Path | None = None
         self.destination_profiles = {
             "Streaming prudent": "streaming_prudent",
             "Club / Loud": "club_loud",
@@ -286,6 +283,11 @@ class MainWindow(QMainWindow):
         source_layout.addRow("LRA", self.metric_labels["lra"])
         source_layout.addRow("Diagnostics", self.metric_labels["diagnostics"])
         source_layout.addRow("Engineering note", self.metric_labels["acoustic_note"])
+        self.waveform_label = QLabel("Waveform preview appears after file selection.")
+        self.waveform_label.setMinimumHeight(130)
+        self.waveform_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.waveform_label.setObjectName("waveformPreview")
+        source_layout.addRow("Waveform", self.waveform_label)
 
         self.best_box = QGroupBox("Recommended candidate")
         best_layout = QFormLayout(self.best_box)
@@ -298,11 +300,18 @@ class MainWindow(QMainWindow):
         }
         self.best_labels["reasons"].setWordWrap(True)
         self.best_labels["path"].setWordWrap(True)
+        self.rating_spin = QSpinBox()
+        self.rating_spin.setRange(1, 5)
+        self.rating_spin.setValue(3)
+        self.save_note_button = QPushButton("Save listening note")
+        self.save_note_button.clicked.connect(self._save_listening_note)
         best_layout.addRow("Preset", self.best_labels["name"])
         best_layout.addRow("Score", self.best_labels["score"])
         best_layout.addRow("Metrics", self.best_labels["metrics"])
         best_layout.addRow("Why it ranked first", self.best_labels["reasons"])
         best_layout.addRow("Rendered file", self.best_labels["path"])
+        best_layout.addRow("Rating (1-5)", self.rating_spin)
+        best_layout.addRow("Preferences", self.save_note_button)
 
         layout.addWidget(self.source_box, stretch=1)
         layout.addWidget(self.best_box, stretch=1)
@@ -411,6 +420,13 @@ class MainWindow(QMainWindow):
                 font-weight: 700;
                 color: #f8fafb;
             }
+            #waveformPreview {
+                border: 1px solid #31404b;
+                border-radius: 8px;
+                background: #18212a;
+                color: #91a0ab;
+                padding: 6px;
+            }
             QPushButton {
                 background: #1f8f7b;
                 border: 0;
@@ -426,7 +442,7 @@ class MainWindow(QMainWindow):
                 background: #3c4b56;
                 color: #91a0ab;
             }
-            QLineEdit, QComboBox, QPlainTextEdit, QTableWidget {
+            QLineEdit, QComboBox, QPlainTextEdit, QTableWidget, QSpinBox {
                 border: 1px solid #31404b;
                 border-radius: 8px;
                 padding: 8px;
@@ -485,13 +501,10 @@ class MainWindow(QMainWindow):
         self.input_edit.setText(path)
         default_dir = path_obj.parent / "renders"
         self.output_edit.setText(str(default_dir))
-<<<<<<< HEAD
         if self.current_analysis is not None and self.current_analysis.source_path != path_obj:
             self.current_analysis = None
         self.status_label.setText("Source file selected. Ready to analyze.")
-=======
-        self.status_label.setText("Source selected. Run analysis or optimization when ready.")
->>>>>>> origin/main
+        self._update_waveform_preview(path_obj)
         self.progress_bar.setValue(0)
         self._update_actions()
 
@@ -521,12 +534,9 @@ class MainWindow(QMainWindow):
             output_dir=output_dir,
             mode=mode,
             config_path=config_path,
-<<<<<<< HEAD
-            source_analysis=source_analysis,
-=======
             destination_profile=self.destination_combo.currentData(),
             strict_true_peak=self.strict_tp_checkbox.isChecked(),
->>>>>>> origin/main
+            source_analysis=source_analysis,
         )
 
     def _analysis_for_request(self, kind: str, input_file: str) -> SourceAnalysis | None:
@@ -578,6 +588,7 @@ class MainWindow(QMainWindow):
             self.current_analysis = result
             self.current_session = None
             self._populate_analysis(result)
+            self._update_waveform_preview(result.source_path)
             self._clear_results()
             self.status_label.setText("Analysis complete. You can now run optimization.")
             self.progress_bar.setValue(100)
@@ -592,7 +603,7 @@ class MainWindow(QMainWindow):
                 self.history_store.append(result, self.current_output_dir)
             self._load_history()
             self.status_label.setText(
-                f"Optimization complete. Review ranking and export your preferred render."
+                "Optimization complete. Review ranking, playback, notes, and export."
             )
             self.progress_bar.setValue(100)
 
@@ -733,6 +744,43 @@ class MainWindow(QMainWindow):
             f"Copied {candidate.preset.name} to:\n{destination}",
         )
 
+    def _save_listening_note(self) -> None:
+        candidate = self._selected_candidate()
+        if candidate is None:
+            self._show_error("Select a candidate to save a listening note.")
+            return
+        config = load_config(self.config_edit.text().strip() or None)
+        preferences_path = (self.current_output_dir or Path.cwd() / "renders") / "preferences.json"
+        service = EngineService(config=config, preference_path=preferences_path)
+        service.add_listening_note(candidate.preset.name, self.rating_spin.value())
+        self.status_label.setText(f"Saved note for {candidate.preset.name} in {preferences_path}")
+
+    def _update_waveform_preview(self, source_path: Path) -> None:
+        try:
+            preview_dir = Path(self.output_edit.text().strip() or source_path.parent / "renders")
+            preview_path = preview_dir / f"{source_path.stem}_waveform.png"
+            config = load_config(self.config_edit.text().strip() or None)
+            created = render_waveform_preview(
+                input_path=source_path,
+                output_path=preview_path,
+                ffmpeg_binary=config.ffmpeg_binary,
+            )
+            self.waveform_preview_path = created
+            pixmap = QPixmap(str(created))
+            self.waveform_label.setPixmap(
+                pixmap.scaled(
+                    max(self.waveform_label.width(), 260),
+                    130,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
+            self.waveform_label.setText("")
+        except Exception:
+            self.waveform_preview_path = None
+            self.waveform_label.setPixmap(QPixmap())
+            self.waveform_label.setText("Waveform preview unavailable for this file.")
+
     def _clear_results(self) -> None:
         self.results_table.setRowCount(0)
         self.details_panel.clear()
@@ -792,6 +840,7 @@ class MainWindow(QMainWindow):
         self.export_button.setDisabled(busy or self._selected_candidate() is None)
         self.play_source_button.setDisabled(busy)
         self.play_candidate_button.setDisabled(busy)
+        self.save_note_button.setDisabled(busy or self._selected_candidate() is None)
         self.mode_combo.setDisabled(busy)
         self.destination_combo.setDisabled(busy)
         self.strict_tp_checkbox.setDisabled(busy)
@@ -801,9 +850,11 @@ class MainWindow(QMainWindow):
 
     def _update_actions(self) -> None:
         has_input = bool(self.input_edit.text().strip())
+        has_candidate = self._selected_candidate() is not None
         self.analyze_button.setEnabled(has_input and self._thread is None)
         self.optimize_button.setEnabled(has_input and self._thread is None)
-        self.export_button.setEnabled(self._thread is None and self._selected_candidate() is not None)
+        self.export_button.setEnabled(self._thread is None and has_candidate)
+        self.save_note_button.setEnabled(self._thread is None and has_candidate)
 
     def _show_error(self, message: str) -> None:
         QMessageBox.critical(self, "OptiMaster", message)
