@@ -5,8 +5,8 @@ Write-Host "Activating virtual environment..."
 .\.venv\Scripts\Activate.ps1
 
 Write-Host "Installing project..."
-pip install -U pip
-pip install -e .
+python -m pip install -U pip setuptools wheel
+python -m pip install --no-build-isolation -e .
 
 Write-Host "Checking FFmpeg..."
 ffmpeg -version

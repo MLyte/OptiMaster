@@ -10,7 +10,7 @@ Ce document est derive de `PROJECT_PRODUCTION_PLAN.md` et sert de suivi executab
 ## Phase 0 - Cadrage produit
 - [x] Positionnement produit clarifie dans la documentation principale (`README.md` + plan produit).
 - [x] Scope MVP confirme: Windows desktop local-first, sans compte, sans cloud.
-- [~] Microcopies UI utilisateur a formaliser dans une spec dediee GUI.
+- [x] Microcopies UI utilisateur formalisees dans une spec dediee GUI (`GUI_MICROCOPY_SPEC.md`).
 
 ## Phase 1 - Durcissement du moteur
 - [x] Separation moteur/CLI via une couche de service (`EngineService`).
@@ -31,20 +31,21 @@ Ce document est derive de `PROJECT_PRODUCTION_PLAN.md` et sert de suivi executab
 - [x] Creer le squelette de l'application PySide6 (fenetre principale + worker thread).
 - [x] Implementer le parcours complet import -> analyse -> optimisation -> top 3 -> export.
 - [x] Ajouter gestion d'etats UI: vide, analyse en cours, optimisation en cours, erreurs.
+- [x] Ajouter une couverture de tests unitaires sur les callbacks de progression service (analyse + optimisation).
 - [~] Affiner la hierarchie visuelle, les microcopies et le polish de l'interface.
 
 ## Phase 4 - Finitions d'usage
-- [ ] A/B listening basique.
-- [ ] Historique local leger des sessions.
-- [ ] Ameliorations visuelles et microcopies.
+- [x] A/B listening basique.
+- [x] Historique local leger des sessions.
+- [x] Ameliorations visuelles et microcopies.
 
 ## Phase 5 - Packaging Windows
-- [ ] Decider PyInstaller vs Nuitka (benchmark demarrage + taille binaire).
-- [ ] Integration et verification FFmpeg bundle.
-- [ ] Procedure build/release reproductible.
+- [x] Decider PyInstaller vs Nuitka (benchmark demarrage + taille binaire).
+- [~] Integration et verification FFmpeg bundle.
+- [x] Procedure build/release reproductible.
 
 ## Phase 6 - QA/Beta/1.0
-- [ ] Definir corpus audio de validation.
-- [ ] Executer matrice de tests manuels sur parcours principal.
+- [x] Definir corpus audio de validation.
+- [~] Executer matrice de tests manuels sur parcours principal.
 - [ ] Ajuster scoring/presets d'apres retours pilote.
 - [ ] Preparer release candidate et 1.0.
