@@ -364,6 +364,16 @@ class MainWindow(QMainWindow):
         self.playback_label = QLabel("Step 5: select a candidate, then compare A and B.")
         self.playback_label.setWordWrap(True)
 
+        self.before_after_table = QTableWidget(4, 4)
+        self.before_after_table.setHorizontalHeaderLabels(["Metric", "Before", "After", "Change"])
+        self.before_after_table.setVerticalHeaderLabels([])
+        self.before_after_table.setAlternatingRowColors(True)
+        self.before_after_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.before_after_table.verticalHeader().setVisible(False)
+        self.before_after_table.horizontalHeader().setStretchLastSection(True)
+        self.before_after_table.setMaximumHeight(180)
+        self._clear_before_after()
+
         self.history_table = QTableWidget(0, 5)
         self.history_table.setHorizontalHeaderLabels(["Date (UTC)", "Session", "Mode", "Best", "Source"])
         self.history_table.setAlternatingRowColors(True)
@@ -374,6 +384,7 @@ class MainWindow(QMainWindow):
 
         layout.addLayout(listening_row)
         layout.addWidget(self.playback_label)
+        layout.addWidget(self.before_after_table)
         layout.addWidget(self.history_table)
         return box
 
@@ -734,6 +745,7 @@ class MainWindow(QMainWindow):
         selected = self._selected_candidate()
         if selected is None:
             self.details_panel.clear()
+            self._clear_before_after()
             self._update_actions()
             return
         lines = [
@@ -768,6 +780,7 @@ class MainWindow(QMainWindow):
             ]
         )
         self.details_panel.setPlainText("\n".join(lines))
+        self._populate_before_after(selected)
         self.status_label.setText("Step 4 complete. Step 5: listen A/B, then step 6: export.")
         if self.current_session and self.current_session.best_candidate is selected:
             self._populate_best_candidate(selected)
@@ -802,6 +815,49 @@ class MainWindow(QMainWindow):
             if session_candidate is candidate:
                 return idx
         return None
+
+    def _clear_before_after(self) -> None:
+        rows = [
+            ("Integrated loudness", "--", "--", "--"),
+            ("True peak", "--", "--", "--"),
+            ("Dynamic range (LRA)", "--", "--", "--"),
+            ("Score", "--", "--", "--"),
+        ]
+        self._set_before_after_rows(rows)
+
+    def _populate_before_after(self, candidate: CandidateResult) -> None:
+        source = candidate.source_metrics
+        output = candidate.output_metrics
+        rows = [
+            (
+                "Integrated loudness",
+                format_metric(source.integrated_lufs, "LUFS"),
+                format_metric(output.integrated_lufs, "LUFS"),
+                f"{output.integrated_lufs - source.integrated_lufs:+.1f} LUFS",
+            ),
+            (
+                "True peak",
+                format_metric(source.true_peak_dbtp, "dBTP"),
+                format_metric(output.true_peak_dbtp, "dBTP"),
+                f"{output.true_peak_dbtp - source.true_peak_dbtp:+.1f} dB",
+            ),
+            (
+                "Dynamic range (LRA)",
+                format_metric(source.lra_lu, "LU"),
+                format_metric(output.lra_lu, "LU"),
+                f"{output.lra_lu - source.lra_lu:+.1f} LU",
+            ),
+            ("Score", "--", f"{candidate.score:.1f}", "Ranked by safety, loudness, and dynamics"),
+        ]
+        self._set_before_after_rows(rows)
+
+    def _set_before_after_rows(self, rows: list[tuple[str, str, str, str]]) -> None:
+        self.before_after_table.setRowCount(len(rows))
+        for row, values in enumerate(rows):
+            for col, value in enumerate(values):
+                item = QTableWidgetItem(value)
+                self.before_after_table.setItem(row, col, item)
+        self.before_after_table.resizeColumnsToContents()
 
     def _export_selected_candidate(self) -> None:
         candidate = self._selected_candidate()
@@ -876,6 +932,7 @@ class MainWindow(QMainWindow):
     def _clear_results(self) -> None:
         self.results_table.setRowCount(0)
         self.details_panel.clear()
+        self._clear_before_after()
         self._populate_best_candidate(None)
         self._update_actions()
 
