@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
+from html import escape
 from importlib import resources
 from pathlib import Path
 
@@ -32,6 +33,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QDoubleSpinBox,
+    QSlider,
     QSpinBox,
     QTabWidget,
     QTableWidget,
@@ -83,6 +85,13 @@ UI_TEXT = {
         "change_source": "Change source",
         "analyze_source": "Analyze source",
         "analyzed": "Analyzed",
+        "processing_time": "Time available",
+        "processing_fast": "Fast preview",
+        "processing_balanced": "Balanced",
+        "processing_best": "Most careful",
+        "processing_hint_fast": "Fewer test passes. Good when you want a quick direction.",
+        "processing_hint_balanced": "Normal passes. Best default balance between wait time and confidence.",
+        "processing_hint_best": "More comparison passes. Slower, but gives OptiMaster more evidence to rank versions.",
         "step_choose_source": "Step 1: choose a source file to begin.",
         "render_box": "Render candidates",
         "render_context_ready": "Source ready. Choose a target, then render versions.",
@@ -217,6 +226,13 @@ UI_TEXT = {
         "change_source": "Changer source",
         "analyze_source": "Analyser source",
         "analyzed": "Analysé",
+        "processing_time": "Temps disponible",
+        "processing_fast": "Apercu rapide",
+        "processing_balanced": "Equilibre",
+        "processing_best": "Le plus soigne",
+        "processing_hint_fast": "Moins de passes testees. Pratique pour obtenir une direction vite.",
+        "processing_hint_balanced": "Passes normales. Le meilleur compromis entre attente et confiance.",
+        "processing_hint_best": "Plus de passes comparees. Plus lent, mais le classement est mieux informe.",
         "step_choose_source": "Étape 1 : choisis un fichier source.",
         "render_box": "Créer les versions",
         "render_context_ready": "Source prête. Choisis un objectif, puis crée les versions.",
@@ -473,6 +489,7 @@ class WorkerRequest:
     strict_true_peak: bool
     target_lufs: float | None
     maximize_loudness: bool
+    processing_quality: int
     source_analysis: SourceAnalysis | None = None
 
 
@@ -539,6 +556,7 @@ class EngineWorker(QObject):
                     strict_true_peak=self.request.strict_true_peak,
                     target_lufs=self.request.target_lufs,
                     maximize_loudness=self.request.maximize_loudness,
+                    processing_quality=self.request.processing_quality,
                     progress_callback=self._emit_progress,
                     cancel_callback=self._cancelled.is_set,
                 )
@@ -917,6 +935,11 @@ class MainWindow(QMainWindow):
         self.audio_player.setAudioOutput(self.audio_output)
         self.current_playback: str | None = None
         self._progress_started_at: float | None = None
+        self._last_progress_message: str | None = None
+        self._last_progress_percent: int = 0
+        self._progress_timer = QTimer(self)
+        self._progress_timer.setInterval(1000)
+        self._progress_timer.timeout.connect(self._refresh_elapsed_progress)
 
         self._build_ui()
         self._apply_language_texts()
@@ -1049,6 +1072,33 @@ class MainWindow(QMainWindow):
         self.analyze_button.setObjectName("stepAction")
         set_lucide_icon(self.analyze_button, "activity", CTA_ICON_COLOR)
         self.analyze_button.clicked.connect(self._run_analyze)
+        self.processing_label = QLabel("Time available")
+        self.processing_label.setObjectName("formLabel")
+        self.processing_slider = QSlider(Qt.Orientation.Horizontal)
+        self.processing_slider.setRange(0, 2)
+        self.processing_slider.setValue(1)
+        self.processing_slider.setTickInterval(1)
+        self.processing_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.processing_slider.valueChanged.connect(self._update_processing_hint)
+        processing_scale = QHBoxLayout()
+        processing_scale.setSpacing(8)
+        self.processing_fast_label = QLabel("Fast preview")
+        self.processing_balanced_label = QLabel("Balanced")
+        self.processing_best_label = QLabel("Most careful")
+        for label in (self.processing_fast_label, self.processing_balanced_label, self.processing_best_label):
+            label.setObjectName("sliderScaleLabel")
+        processing_scale.addWidget(self.processing_fast_label)
+        processing_scale.addStretch(1)
+        processing_scale.addWidget(self.processing_balanced_label)
+        processing_scale.addStretch(1)
+        processing_scale.addWidget(self.processing_best_label)
+        processing_slider_layout = QVBoxLayout()
+        processing_slider_layout.setSpacing(4)
+        processing_slider_layout.addWidget(self.processing_slider)
+        processing_slider_layout.addLayout(processing_scale)
+        self.processing_hint_label = QLabel("Normal passes. Best default balance between wait time and confidence.")
+        self.processing_hint_label.setObjectName("targetHint")
+        self.processing_hint_label.setWordWrap(True)
         self.status_label = QLabel("Step 1: choose a source file to begin.")
         self.status_label.setWordWrap(True)
         self.progress_bar = QProgressBar()
@@ -1058,9 +1108,12 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(self.selected_source_label, 0, 0, 1, 3)
         layout.addWidget(self.change_source_button, 0, 3, Qt.AlignmentFlag.AlignRight)
-        layout.addWidget(self.analyze_button, 1, 0)
-        layout.addWidget(self.status_label, 1, 1, 1, 2)
-        layout.addWidget(self.progress_bar, 1, 3)
+        layout.addWidget(self.processing_label, 1, 0)
+        layout.addLayout(processing_slider_layout, 1, 1, 1, 2)
+        layout.addWidget(self.processing_hint_label, 1, 3)
+        layout.addWidget(self.analyze_button, 2, 0)
+        layout.addWidget(self.status_label, 2, 1, 1, 2)
+        layout.addWidget(self.progress_bar, 2, 3)
         return self.analyze_box
 
     def _build_render_controls(self) -> QGroupBox:
@@ -1173,6 +1226,7 @@ class MainWindow(QMainWindow):
         self.render_status_label = QLabel("Ready to render candidate versions.")
         self.render_status_label.setObjectName("renderStatus")
         self.render_status_label.setWordWrap(True)
+        self.render_status_label.setMinimumHeight(52)
         self.render_progress_bar = AnimatedProgressBar()
         self.render_progress_bar.setRange(0, 100)
         self.render_progress_bar.setValue(0)
@@ -1585,6 +1639,11 @@ class MainWindow(QMainWindow):
         self.selected_source_label.setText(self._t("source_selected"))
         self.change_source_button.setText(self._t("change_source"))
         self.analyze_button.setText(self._t("analyzed") if self.current_analysis else self._t("analyze_source"))
+        self.processing_label.setText(self._t("processing_time"))
+        self.processing_fast_label.setText(self._t("processing_fast"))
+        self.processing_balanced_label.setText(self._t("processing_balanced"))
+        self.processing_best_label.setText(self._t("processing_best"))
+        self._update_processing_hint()
         if not self.input_edit.text().strip():
             self.status_label.setText(self._t("step_choose_source"))
 
@@ -1829,6 +1888,11 @@ class MainWindow(QMainWindow):
                 color: #a1a1aa;
                 padding: 4px 2px;
             }
+            #sliderScaleLabel {
+                color: #a1a1aa;
+                font-size: 11px;
+                font-weight: 600;
+            }
             #statusHint {
                 color: #a1a1aa;
                 background: #09090b;
@@ -1998,6 +2062,29 @@ class MainWindow(QMainWindow):
             QCheckBox::indicator:disabled {
                 border-color: #52525b;
                 background: #18181b;
+            }
+            QSlider {
+                min-height: 30px;
+            }
+            QSlider::groove:horizontal {
+                height: 6px;
+                background: #27272a;
+                border-radius: 3px;
+            }
+            QSlider::sub-page:horizontal {
+                background: #14b8a6;
+                border-radius: 3px;
+            }
+            QSlider::handle:horizontal {
+                background: #e5b94d;
+                border: 2px solid #0b0b0f;
+                width: 18px;
+                height: 18px;
+                margin: -7px 0;
+                border-radius: 9px;
+            }
+            QSlider::handle:horizontal:disabled {
+                background: #71717a;
             }
             QLineEdit, QComboBox, QPlainTextEdit, QTableWidget, QSpinBox, QDoubleSpinBox {
                 border: 1px solid #27272a;
@@ -2216,8 +2303,17 @@ class MainWindow(QMainWindow):
             strict_true_peak=self.strict_tp_checkbox.isChecked(),
             target_lufs=self.target_lufs_spin.value(),
             maximize_loudness=self.max_loudness_checkbox.isChecked(),
+            processing_quality=self.processing_slider.value(),
             source_analysis=source_analysis,
         )
+
+    def _update_processing_hint(self, *_args: object) -> None:
+        hints = {
+            0: self._t("processing_hint_fast"),
+            1: self._t("processing_hint_balanced"),
+            2: self._t("processing_hint_best"),
+        }
+        self.processing_hint_label.setText(hints.get(self.processing_slider.value(), hints[1]))
 
     def _apply_quick_target(self, *_args: object) -> None:
         target = self.quick_target_combo.currentData()
@@ -2250,6 +2346,9 @@ class MainWindow(QMainWindow):
 
         self._active_worker_kind = request.kind
         self._progress_started_at = time.monotonic()
+        self._last_progress_message = None
+        self._last_progress_percent = 0
+        self._progress_timer.start()
         self.current_output_dir = Path(request.output_dir)
         if request.kind == "optimize":
             self.source_box.setVisible(False)
@@ -2301,7 +2400,10 @@ class MainWindow(QMainWindow):
         self._worker = None
         finished_kind = self._active_worker_kind
         self._active_worker_kind = None
+        self._progress_timer.stop()
         self._progress_started_at = None
+        self._last_progress_message = None
+        self._last_progress_percent = 0
         self._set_busy(False)
         if finished_kind == "optimize":
             self.render_progress_bar.stop_animation()
@@ -2315,13 +2417,23 @@ class MainWindow(QMainWindow):
 
     def _on_progress(self, message: str, percent: int) -> None:
         message = self._display_progress_message(message)
-        progress_text = self._progress_text(message, percent)
-        if self._active_worker_kind == "optimize":
-            self.render_status_label.setText(self._animated_status_text(progress_text))
-            self.render_progress_bar.setValue(percent)
-            self.render_overlay.set_message(progress_text)
+        self._last_progress_message = message
+        self._last_progress_percent = percent
+        self._refresh_elapsed_progress()
+
+    def _refresh_elapsed_progress(self) -> None:
+        if self._progress_started_at is None:
             return
-        self.status_label.setText(progress_text)
+        message = self._last_progress_message
+        percent = self._last_progress_percent
+        if message is None:
+            message = self._t("preparing_render") if self._active_worker_kind == "optimize" else self._t("preparing_analysis")
+        if self._active_worker_kind == "optimize":
+            self.render_status_label.setText(self._rich_progress_text(message, percent, animated=True))
+            self.render_progress_bar.setValue(percent)
+            self.render_overlay.set_message(self._plain_progress_text(message, percent))
+            return
+        self.status_label.setText(self._rich_progress_text(message, percent))
         self.progress_bar.setValue(percent)
 
     def _on_worker_finished(self, result: object) -> None:
@@ -2532,6 +2644,8 @@ class MainWindow(QMainWindow):
     def _candidate_choice_label(self, candidate: CandidateResult) -> str:
         if "_loudest_" in candidate.preset.name:
             return "Max loudness test"
+        if "_target_" in candidate.preset.name:
+            return "Careful comparison"
         if candidate.preset.name.endswith("_optimaster"):
             return "Clean fallback"
         if self.current_session and self.current_session.candidates:
@@ -2544,6 +2658,8 @@ class MainWindow(QMainWindow):
         name = self._human_preset_name(candidate.preset.name)
         if "_loudest_" in candidate.preset.name:
             name = f"{name} - Max loudness"
+        if "_target_" in candidate.preset.name:
+            name = f"{name} - Careful comparison"
         if candidate.preset.name.endswith("_optimaster"):
             name = f"{name} - Clean fallback"
         if rank is None:
@@ -2554,6 +2670,8 @@ class MainWindow(QMainWindow):
         name = preset_name.removesuffix("_optimaster")
         if "_loudest_" in name:
             name = name.split("_loudest_", 1)[0]
+        if "_target_" in name:
+            name = name.split("_target_", 1)[0]
         return name
 
     def _human_preset_name(self, preset_name: str) -> str:
@@ -2579,6 +2697,40 @@ class MainWindow(QMainWindow):
     def _animated_status_text(self, message: str) -> str:
         dots = "." * ((self.render_progress_bar._phase // 250) % 4)
         return f"{message}{dots}"
+
+    def _progress_parts(self, message: str, percent: int, animated: bool = False) -> tuple[str | None, str, str]:
+        version = None
+        title = message
+        if message.startswith("V") and " - " in message:
+            version, title = message.split(" - ", 1)
+        if animated:
+            title = self._animated_status_text(title)
+        if percent <= 0:
+            meta = "Starting"
+        elif percent >= 100:
+            meta = "100% complete"
+        else:
+            meta_parts = [f"{percent}% complete"]
+            elapsed = self._elapsed_work_time()
+            if elapsed:
+                meta_parts.append(f"{elapsed} elapsed")
+            meta = " · ".join(meta_parts)
+        return version, title, meta
+
+    def _plain_progress_text(self, message: str, percent: int) -> str:
+        version, title, meta = self._progress_parts(message, percent)
+        detail = f"{version} · {meta}" if version else meta
+        return f"{title}\n{detail}"
+
+    def _rich_progress_text(self, message: str, percent: int, animated: bool = False) -> str:
+        version, title, meta = self._progress_parts(message, percent, animated=animated)
+        detail = f"{version} · {meta}" if version else meta
+        return (
+            '<div style="line-height:1.25;">'
+            f'<span style="color:#f7f3ea;font-size:14px;font-weight:800;">{escape(title)}</span><br>'
+            f'<span style="color:#a1a1aa;font-size:12px;font-weight:600;">{escape(detail)}</span>'
+            "</div>"
+        )
 
     def _progress_text(self, message: str, percent: int) -> str:
         if percent <= 0:
@@ -2916,6 +3068,7 @@ class MainWindow(QMainWindow):
             widget.setDisabled(busy)
         for widget in [
             self.analyze_button,
+            self.processing_slider,
             self.export_button,
             self.new_analysis_button,
             self.play_source_button,

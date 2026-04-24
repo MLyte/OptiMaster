@@ -216,6 +216,46 @@ def test_optimize_applies_target_lufs_to_render_filter(monkeypatch, tmp_path: Pa
     ]
 
 
+def test_processing_quality_changes_render_pass_count(monkeypatch, tmp_path: Path):
+    input_file = tmp_path / "input.wav"
+    input_file.write_bytes(b"stub")
+    metrics = LoudnessMetrics(-11.0, -1.3, 7.2, -20.2)
+    preset = CandidatePreset(
+        name="transparent_trim",
+        description="Transparent trim",
+        ffmpeg_filter="volume=-1.5dB",
+    )
+
+    monkeypatch.setattr("optimaster.service.validate_input_file", lambda _: input_file)
+    monkeypatch.setattr("optimaster.service.assert_ffmpeg_available", lambda _: None)
+    monkeypatch.setattr("optimaster.service.analyze_loudness", lambda *_args, **_kwargs: metrics)
+    monkeypatch.setattr("optimaster.service.classify_source", lambda *_: ("almost_ready", ["Stable profile"]))
+    monkeypatch.setattr("optimaster.service.select_presets_for_profile", lambda **_: [preset])
+    monkeypatch.setattr("optimaster.service.render_candidate", lambda **_kwargs: None)
+    monkeypatch.setattr("optimaster.service.score_candidate", lambda **_: (92.0, ["Good"]))
+    monkeypatch.setattr("optimaster.service.EngineService._write_exports", lambda *_args, **_kwargs: None)
+
+    quick_session = EngineService(AppConfig()).optimize(
+        input_file=input_file,
+        output_dir=tmp_path / "quick",
+        mode=OptimizationMode.LOUDER,
+        target_lufs=-8.0,
+        processing_quality=0,
+    )
+    careful_session = EngineService(AppConfig()).optimize(
+        input_file=input_file,
+        output_dir=tmp_path / "careful",
+        mode=OptimizationMode.LOUDER,
+        target_lufs=-8.0,
+        processing_quality=2,
+    )
+
+    assert len(quick_session.candidates) == 1
+    assert len(careful_session.candidates) == 4
+    assert any("_target_" in candidate.preset.name for candidate in careful_session.candidates)
+    assert any(candidate.preset.name.endswith("_optimaster") for candidate in careful_session.candidates)
+
+
 def test_target_lufs_uses_performance_scoring(monkeypatch, tmp_path: Path):
     input_file = tmp_path / "input.wav"
     input_file.write_bytes(b"stub")

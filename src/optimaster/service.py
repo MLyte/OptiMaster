@@ -111,6 +111,7 @@ class EngineService:
         strict_true_peak: bool = False,
         target_lufs: float | None = None,
         maximize_loudness: bool = False,
+        processing_quality: int = 1,
         progress_callback: ProgressCallback | None = None,
         cancel_callback: CancelCallback | None = None,
     ) -> OptimizationSession:
@@ -151,7 +152,14 @@ class EngineService:
         preference_path = self.preference_path or (out_dir / "preferences.json")
         preset_bias = PreferenceStore(preference_path).load()
 
-        render_jobs = self._render_jobs(presets, target_lufs, scoring_cfg, fallback_scoring_cfg, maximize_loudness)
+        render_jobs = self._render_jobs(
+            presets,
+            target_lufs,
+            scoring_cfg,
+            fallback_scoring_cfg,
+            maximize_loudness,
+            processing_quality,
+        )
         results: list[CandidateResult] = []
         total_jobs = max(len(render_jobs), 1)
         for idx, (preset, render_target_lufs, job_scoring_cfg) in enumerate(render_jobs, start=1):
@@ -279,13 +287,20 @@ class EngineService:
         target_scoring_cfg,
         fallback_scoring_cfg,
         maximize_loudness: bool = False,
+        processing_quality: int = 1,
     ) -> list[tuple[CandidatePreset, float | None, object]]:
         if target_lufs is None:
             return [(preset, None, target_scoring_cfg) for preset in presets]
         jobs: list[tuple[CandidatePreset, float | None, object]] = []
+        quality = max(0, min(processing_quality, 2))
         for preset in presets:
             if maximize_loudness:
-                for loudness_target in (-10.0, -9.0, -8.0, -7.0, -6.0):
+                loudness_targets = {
+                    0: (-9.0, -8.0, -7.0),
+                    1: (-10.0, -9.0, -8.0, -7.0, -6.0),
+                    2: (-10.5, -9.5, -8.5, -7.5, -6.5, -6.0),
+                }[quality]
+                for loudness_target in loudness_targets:
                     loudness_preset = CandidatePreset(
                         name=f"{preset.name}_loudest_{self._target_slug(loudness_target)}",
                         description=f"{preset.description} Loudest safe search at {loudness_target:.1f} LUFS.",
@@ -303,14 +318,37 @@ class EngineService:
                         )
                     )
             else:
-                jobs.append((preset, target_lufs, target_scoring_cfg))
-            fallback_preset = CandidatePreset(
-                name=f"{preset.name}_optimaster",
-                description=f"{preset.description} OptiMaster technical fallback.",
-                ffmpeg_filter=preset.ffmpeg_filter,
-                families=preset.families,
-            )
-            jobs.append((fallback_preset, None, fallback_scoring_cfg))
+                target_variants = {
+                    0: (target_lufs,),
+                    1: (target_lufs,),
+                    2: (target_lufs - 0.5, target_lufs, target_lufs + 0.5),
+                }[quality]
+                for render_target in target_variants:
+                    target_preset = preset
+                    if render_target != target_lufs:
+                        target_preset = CandidatePreset(
+                            name=f"{preset.name}_target_{self._target_slug(render_target)}",
+                            description=f"{preset.description} Quality comparison at {render_target:.1f} LUFS.",
+                            ffmpeg_filter=preset.ffmpeg_filter,
+                            families=preset.families,
+                        )
+                    jobs.append(
+                        (
+                            target_preset,
+                            render_target,
+                            self._target_scoring_config(fallback_scoring_cfg, render_target)
+                            if render_target != target_lufs
+                            else target_scoring_cfg,
+                        )
+                    )
+            if quality >= 1:
+                fallback_preset = CandidatePreset(
+                    name=f"{preset.name}_optimaster",
+                    description=f"{preset.description} OptiMaster technical fallback.",
+                    ffmpeg_filter=preset.ffmpeg_filter,
+                    families=preset.families,
+                )
+                jobs.append((fallback_preset, None, fallback_scoring_cfg))
         return jobs
 
     def _target_slug(self, target_lufs: float) -> str:
