@@ -44,12 +44,15 @@ from optimaster.config import load_config
 from optimaster.errors import AppError
 from optimaster.ffmpeg import render_waveform_preview
 from optimaster.history import SessionHistoryStore
+from optimaster import __version__
 from optimaster.models import CandidateResult, OptimizationMode, OptimizationSession, SourceAnalysis, SourceProfile
 from optimaster.service import EngineService
 
 
 APP_TITLE = "OptiMaster"
-APP_VERSION = "2026.4.24"
+APP_VERSION = __version__
+APP_RUNTIME = "exe" if getattr(sys, "frozen", False) else "python"
+APP_DISPLAY_VERSION = f"{APP_VERSION}-{APP_RUNTIME}"
 APP_ICON = "optimaster_icon.ico"
 APP_ICON_FALLBACK = "optimaster_icon.svg"
 BRAND_ACCENT = "#e5b94d"
@@ -613,7 +616,7 @@ class WorkPulse(QFrame):
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle(APP_TITLE)
+        self.setWindowTitle(f"{APP_TITLE} - {APP_DISPLAY_VERSION}")
         self.setWindowIcon(app_icon())
         self.resize(1240, 760)
         self.setMinimumSize(1080, 640)
@@ -702,7 +705,7 @@ class MainWindow(QMainWindow):
         logo.setPixmap(app_icon().pixmap(38, 38))
         name = QLabel(APP_TITLE)
         name.setObjectName("brandName")
-        version = QLabel(f"Beta {APP_VERSION}")
+        version = QLabel(f"Beta {APP_DISPLAY_VERSION}")
         version.setObjectName("brandVersion")
 
         layout.addWidget(logo)
@@ -730,7 +733,7 @@ class MainWindow(QMainWindow):
         title_row.addWidget(title)
         title_row.addStretch(1)
         subtitle = QLabel(
-            f"Classic path: choose a file, analyze it, then render candidates. Beta {APP_VERSION}."
+            f"Classic path: choose a file, analyze it, then render candidates. Beta {APP_DISPLAY_VERSION}."
         )
         subtitle.setWordWrap(True)
 
@@ -2116,7 +2119,13 @@ class MainWindow(QMainWindow):
         for prefix in ("Rendering ", "Measuring ", "Scoring "):
             if message.startswith(prefix):
                 preset_name = message.removeprefix(prefix)
-                return f"{prefix}{self._human_preset_name(preset_name)}"
+                version_label = ""
+                if ":" in preset_name:
+                    version_token, preset_name = preset_name.split(":", 1)
+                    version_token = version_token.strip()
+                    if "/" in version_token:
+                        version_label = f"V{version_token} - "
+                return f"{version_label}{prefix}{self._human_preset_name(preset_name.strip())}"
         return message
 
     def _animated_status_text(self, message: str) -> str:
@@ -2125,22 +2134,21 @@ class MainWindow(QMainWindow):
 
     def _progress_text(self, message: str, percent: int) -> str:
         if percent <= 0:
-            return f"{message} - estimating..."
+            return f"{message} - starting"
         if percent >= 100:
             return f"{message} - 100%"
-        eta = self._estimated_time_remaining(percent)
-        if eta:
-            return f"{message} - {percent}% - about {eta} left"
-        return f"{message} - {percent}% - estimating..."
+        elapsed = self._elapsed_work_time()
+        if elapsed:
+            return f"{message} - {percent}% - {elapsed} elapsed"
+        return f"{message} - {percent}%"
 
-    def _estimated_time_remaining(self, percent: int) -> str | None:
-        if self._progress_started_at is None or percent < 8:
+    def _elapsed_work_time(self) -> str | None:
+        if self._progress_started_at is None:
             return None
-        elapsed = max(time.monotonic() - self._progress_started_at, 0.1)
-        remaining = elapsed * ((100 - percent) / max(percent, 1))
-        if remaining < 5:
-            return "a few seconds"
-        minutes, seconds = divmod(int(remaining + 0.5), 60)
+        elapsed = int(max(time.monotonic() - self._progress_started_at, 0.0))
+        if elapsed < 3:
+            return None
+        minutes, seconds = divmod(elapsed, 60)
         if minutes == 0:
             return f"{seconds}s"
         return f"{minutes}m {seconds:02d}s"

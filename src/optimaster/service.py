@@ -159,7 +159,7 @@ class EngineService:
             render_progress = 45 + int(((idx - 1) / total_jobs) * 40)
             analyze_progress = 55 + int(((idx - 1) / total_jobs) * 40)
             score_progress = 65 + int(((idx - 1) / total_jobs) * 35)
-            self._notify(progress_callback, f"Rendering {preset.name}", render_progress)
+            self._notify(progress_callback, f"Rendering {idx}/{total_jobs}: {preset.name}", render_progress)
             output_path = out_dir / preset.output_name(analysis.source_path, suffix=f".{self.config.output_format}")
             render_candidate(
                 input_path=analysis.source_path,
@@ -169,14 +169,14 @@ class EngineService:
                 cancel_callback=cancel_callback,
             )
             self._raise_if_cancelled(cancel_callback)
-            self._notify(progress_callback, f"Measuring {preset.name}", analyze_progress)
+            self._notify(progress_callback, f"Measuring {idx}/{total_jobs}: {preset.name}", analyze_progress)
             output_metrics = analyze_loudness(
                 output_path,
                 ffmpeg_binary=self.config.ffmpeg_binary,
                 cancel_callback=cancel_callback,
             )
             self._raise_if_cancelled(cancel_callback)
-            self._notify(progress_callback, f"Scoring {preset.name}", score_progress)
+            self._notify(progress_callback, f"Scoring {idx}/{total_jobs}: {preset.name}", score_progress)
             score, reasons = score_candidate(
                 metrics=output_metrics,
                 cfg=job_scoring_cfg,
