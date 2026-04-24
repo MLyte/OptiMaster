@@ -1,0 +1,30 @@
+{
+  "notes": [
+    {
+      "preset": "safe_limit",
+      "rating": 5
+    },
+    {
+      "preset": "safe_limit",
+      "rating": 4
+    },
+    {
+      "preset": "gentle_glue",
+      "rating": 2
+    }
+  ],
+  "preset_stats": {
+    "safe_limit": {
+      "count": 2,
+      "sum": 9
+    },
+    "gentle_glue": {
+      "count": 1,
+      "sum": 2
+    }
+  },
+  "preset_bias": {
+    "safe_limit": 3.0,
+    "gentle_glue": -2.0
+  }
+}

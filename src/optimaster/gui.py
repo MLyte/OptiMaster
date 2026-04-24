@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QSpinBox,
+    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -164,11 +165,34 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(20, 20, 20, 20)
         root.setSpacing(16)
 
-        root.addWidget(self._build_header())
-        root.addWidget(self._build_controls())
-        root.addLayout(self._build_summary(), stretch=2)
-        root.addWidget(self._build_listening_tools())
-        root.addWidget(self._build_results(), stretch=3)
+        self.workflow_tabs = QTabWidget()
+        self.workflow_tabs.setObjectName("workflowTabs")
+
+        source_step = QWidget()
+        source_layout = QVBoxLayout(source_step)
+        source_layout.setContentsMargins(0, 0, 0, 0)
+        source_layout.setSpacing(14)
+        source_layout.addWidget(self._build_header())
+        source_layout.addWidget(self._build_controls())
+        source_layout.addWidget(self._build_source_analysis(), stretch=1)
+
+        candidate_step = QWidget()
+        candidate_layout = QVBoxLayout(candidate_step)
+        candidate_layout.setContentsMargins(0, 0, 0, 0)
+        candidate_layout.setSpacing(14)
+        candidate_layout.addWidget(self._build_best_candidate())
+        candidate_layout.addWidget(self._build_results(), stretch=1)
+
+        listening_step = QWidget()
+        listening_layout = QVBoxLayout(listening_step)
+        listening_layout.setContentsMargins(0, 0, 0, 0)
+        listening_layout.setSpacing(14)
+        listening_layout.addWidget(self._build_listening_tools(), stretch=1)
+
+        self.workflow_tabs.addTab(source_step, "1. Analyze source")
+        self.workflow_tabs.addTab(candidate_step, "2. Choose candidate")
+        self.workflow_tabs.addTab(listening_step, "3. Listen & export")
+        root.addWidget(self.workflow_tabs, stretch=1)
 
         self.setCentralWidget(central)
         self._build_menu()
@@ -184,8 +208,7 @@ class MainWindow(QMainWindow):
         title = QLabel("Drop a WAV or FLAC premaster here")
         title.setObjectName("heroTitle")
         subtitle = QLabel(
-            "Analyze your source, run careful finishing passes, "
-            "then review and export the best candidate."
+            "Start with a file, render candidates, then choose one for listening."
         )
         subtitle.setWordWrap(True)
 
@@ -230,7 +253,7 @@ class MainWindow(QMainWindow):
         config_button.clicked.connect(self._browse_config_file)
 
         self.analyze_button = QPushButton("Analyze source")
-        self.optimize_button = QPushButton("Run optimization")
+        self.optimize_button = QPushButton("Render candidates")
         self.export_button = QPushButton("Export selected candidate")
         self.analyze_button.clicked.connect(self._run_analyze)
         self.optimize_button.clicked.connect(self._run_optimize)
@@ -248,8 +271,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.config_edit, 3, 1)
         layout.addWidget(config_button, 3, 2)
         layout.addWidget(self.analyze_button, 4, 0)
-        layout.addWidget(self.optimize_button, 4, 1)
-        layout.addWidget(self.export_button, 4, 2)
+        layout.addWidget(self.optimize_button, 4, 1, 1, 2)
 
         self.status_label = QLabel("Ready. Choose a source file to begin.")
         self.progress_bar = QProgressBar()
@@ -259,10 +281,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.progress_bar, 5, 2)
         return box
 
-    def _build_summary(self) -> QHBoxLayout:
-        layout = QHBoxLayout()
-        layout.setSpacing(16)
-
+    def _build_source_analysis(self) -> QGroupBox:
         self.source_box = QGroupBox("Source analysis")
         source_layout = QFormLayout(self.source_box)
         self.metric_labels = {
@@ -288,14 +307,16 @@ class MainWindow(QMainWindow):
         self.waveform_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.waveform_label.setObjectName("waveformPreview")
         source_layout.addRow("Waveform", self.waveform_label)
+        return self.source_box
 
+    def _build_best_candidate(self) -> QGroupBox:
         self.best_box = QGroupBox("Recommended candidate")
         best_layout = QFormLayout(self.best_box)
         self.best_labels = {
             "name": QLabel("No candidate yet"),
             "score": QLabel("--"),
             "metrics": QLabel("--"),
-            "reasons": QLabel("Run optimization to see the top recommendation."),
+            "reasons": QLabel("Render candidates to see the top recommendation."),
             "path": QLabel("--"),
         }
         self.best_labels["reasons"].setWordWrap(True)
@@ -312,10 +333,7 @@ class MainWindow(QMainWindow):
         best_layout.addRow("Rendered file", self.best_labels["path"])
         best_layout.addRow("Rating (1-5)", self.rating_spin)
         best_layout.addRow("Preferences", self.save_note_button)
-
-        layout.addWidget(self.source_box, stretch=1)
-        layout.addWidget(self.best_box, stretch=1)
-        return layout
+        return self.best_box
 
     def _build_listening_tools(self) -> QGroupBox:
         box = QGroupBox("A/B listening and history")
@@ -331,6 +349,7 @@ class MainWindow(QMainWindow):
         listening_row.addWidget(self.play_source_button)
         listening_row.addWidget(self.play_candidate_button)
         listening_row.addWidget(self.stop_audio_button)
+        listening_row.addWidget(self.export_button)
 
         self.playback_label = QLabel("Playback idle.")
         self.playback_label.setWordWrap(True)
@@ -364,7 +383,9 @@ class MainWindow(QMainWindow):
 
         self.details_panel = QPlainTextEdit()
         self.details_panel.setReadOnly(True)
-        self.details_panel.setPlaceholderText("Candidate details and scoring reasons appear here.")
+        self.details_panel.setPlaceholderText(
+            "After rendering, select a row above to see why it was ranked."
+        )
         self.details_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         layout.addWidget(self.results_table, stretch=2)
@@ -396,6 +417,26 @@ class MainWindow(QMainWindow):
             }
             QMainWindow, QMenuBar, QMenu, QGroupBox, QPlainTextEdit, QTableWidget, QLineEdit, QComboBox, QProgressBar {
                 background: #12161c;
+            }
+            QTabWidget::pane {
+                border: 0;
+                padding-top: 8px;
+            }
+            QTabBar::tab {
+                background: #18212a;
+                color: #91a0ab;
+                border: 1px solid #2b353f;
+                border-bottom: 0;
+                padding: 10px 18px;
+                min-width: 150px;
+            }
+            QTabBar::tab:selected {
+                background: #1f8f7b;
+                color: #061615;
+                font-weight: 700;
+            }
+            QTabBar::tab:disabled {
+                color: #53616b;
             }
             QGroupBox {
                 border: 1px solid #2b353f;
@@ -506,6 +547,7 @@ class MainWindow(QMainWindow):
         self.status_label.setText("Source file selected. Ready to analyze.")
         self._update_waveform_preview(path_obj)
         self.progress_bar.setValue(0)
+        self.workflow_tabs.setCurrentIndex(0)
         self._update_actions()
 
     def _run_analyze(self) -> None:
@@ -526,7 +568,8 @@ class MainWindow(QMainWindow):
 
         output_dir = self.output_edit.text().strip() or str(Path(input_file).resolve().parent / "renders")
         config_path = self.config_edit.text().strip() or None
-        mode = self.mode_combo.currentData()
+        mode_data = self.mode_combo.currentData()
+        mode = mode_data if isinstance(mode_data, OptimizationMode) else OptimizationMode(str(mode_data))
         source_analysis = self._analysis_for_request(kind, input_file)
         return WorkerRequest(
             kind=kind,
@@ -590,8 +633,9 @@ class MainWindow(QMainWindow):
             self._populate_analysis(result)
             self._update_waveform_preview(result.source_path)
             self._clear_results()
-            self.status_label.setText("Analysis complete. You can now run optimization.")
+            self.status_label.setText("Analysis complete. Next: render candidates.")
             self.progress_bar.setValue(100)
+            self.workflow_tabs.setCurrentIndex(0)
             return
 
         if isinstance(result, OptimizationSession):
@@ -603,9 +647,10 @@ class MainWindow(QMainWindow):
                 self.history_store.append(result, self.current_output_dir)
             self._load_history()
             self.status_label.setText(
-                "Optimization complete. Review ranking, playback, notes, and export."
+                "Candidates rendered. Select one, then continue to listening."
             )
             self.progress_bar.setValue(100)
+            self.workflow_tabs.setCurrentIndex(1)
 
     def _on_worker_failed(self, message: str) -> None:
         self.status_label.setText("Task failed. Check the error dialog for details.")
@@ -649,7 +694,7 @@ class MainWindow(QMainWindow):
             self.best_labels["name"].setText("No candidate")
             self.best_labels["score"].setText("--")
             self.best_labels["metrics"].setText("--")
-            self.best_labels["reasons"].setText("No candidate available.")
+            self.best_labels["reasons"].setText("Render candidates first, then select one from the table.")
             self.best_labels["path"].setText("--")
             return
 
@@ -708,6 +753,7 @@ class MainWindow(QMainWindow):
             ]
         )
         self.details_panel.setPlainText("\n".join(lines))
+        self.status_label.setText("Candidate selected. Continue to step 3 for A/B listening and export.")
         if self.current_session and self.current_session.best_candidate is selected:
             self._populate_best_candidate(selected)
         self._update_actions()
@@ -816,7 +862,8 @@ class MainWindow(QMainWindow):
     def _play_selected_candidate(self) -> None:
         candidate = self._selected_candidate()
         if candidate is None:
-            self._show_error("Select a candidate to audition B.")
+            self.workflow_tabs.setCurrentIndex(1)
+            self.status_label.setText("Render and select a candidate before listening to B.")
             return
         self._start_playback(candidate.output_path, f"B ({candidate.preset.name})")
 
@@ -839,7 +886,7 @@ class MainWindow(QMainWindow):
         self.optimize_button.setDisabled(busy)
         self.export_button.setDisabled(busy or self._selected_candidate() is None)
         self.play_source_button.setDisabled(busy)
-        self.play_candidate_button.setDisabled(busy)
+        self.play_candidate_button.setDisabled(busy or self._selected_candidate() is None)
         self.save_note_button.setDisabled(busy or self._selected_candidate() is None)
         self.mode_combo.setDisabled(busy)
         self.destination_combo.setDisabled(busy)
@@ -854,6 +901,7 @@ class MainWindow(QMainWindow):
         self.analyze_button.setEnabled(has_input and self._thread is None)
         self.optimize_button.setEnabled(has_input and self._thread is None)
         self.export_button.setEnabled(self._thread is None and has_candidate)
+        self.play_candidate_button.setEnabled(self._thread is None and has_candidate)
         self.save_note_button.setEnabled(self._thread is None and has_candidate)
 
     def _show_error(self, message: str) -> None:

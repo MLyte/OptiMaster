@@ -3,16 +3,15 @@
 Local audio finishing assistant for hot premaster files.
 
 OptiMaster is a Python app that automates a prudent, reproducible finishing workflow:
-- analyze an input WAV/FLAC with FFmpeg
-- classify the source profile (very hot, almost ready, etc.)
-- generate restrained mastering candidates adapted to the profile
+- analyze an input WAV or FLAC with FFmpeg
+- classify the source profile
+- generate restrained finishing candidates adapted to the source
 - re-analyze each candidate and score them
 - recommend the most balanced result while keeping final choice human
 
-It is intentionally modest: it does **not** pretend to create a universal "perfect master".
-It helps you find the best local, safe, repeatable finishing pass for a given export.
+It is intentionally modest: it does not claim to create a universal "perfect master".
 
-## Current scope
+## Current Scope
 
 MVP:
 - CLI first
@@ -21,104 +20,60 @@ MVP:
 - source-aware candidate selection
 - Safe / Balanced / Louder modes
 - analysis + scoring + export
-- desktop GUI v0 for import, analysis, ranking, and export
+- desktop GUI for import, analysis, ranking, playback, and export
 
-Implemented in this version:
-- batch processing (`optimaster optimize-batch ...`)
-- listening notes / preference learning (`optimaster add-note ...`, plus score bias)
+Implemented in the current codebase:
+- batch processing via `optimaster optimize-batch`
+- listening notes / preference learning via `optimaster add-note`
 - waveform preview in the GUI source panel
+- local session history in the GUI
+- A/B listening playback in the GUI
 
-## Why this project exists
+## Installation
 
-Some exports are already very hot. Heavy automatic mastering can create pumping, unstable balance,
-and ugly true peaks. OptiMaster instead tries a few restrained chains and picks the best candidate
-using measurable rules.
-
-## Project structure
-
-```text
-OptiMaster/
-├── README.md
-├── PROJECT_PRODUCTION_PLAN.md
-├── TASKS_MASTER.md
-├── pyproject.toml
-├── config.example.yaml
-├── src/
-│   └── optimaster/
-│       ├── __init__.py
-│       ├── __main__.py
-│       ├── cli.py
-│       ├── config.py
-│       ├── errors.py
-│       ├── ffmpeg.py
-│       ├── gui.py
-│       ├── models.py
-│       ├── pipeline.py
-│       ├── presets.py
-│       ├── scoring.py
-│       └── service.py
-└── tests/
-    └── test_scoring.py
-```
-
-## Installation (Windows-first)
-
-Python 3.11+ recommended.
-
-1) Create and activate a virtual environment:
+Windows-first setup:
 
 ```powershell
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-```
-
-2) Install FFmpeg and verify it is on `PATH`:
-
-```powershell
+python -m pip install -e .
 ffmpeg -version
 ```
 
-3) Install OptiMaster in editable mode:
+Requirements:
+- Python 3.11+
+- FFmpeg available on `PATH`
 
-```powershell
-python -m pip install -e .
-```
+The GUI dependency `PySide6` is included in the project dependencies.
 
-The GUI dependency (`PySide6`) is included in project dependencies.
+## Quick Start
 
-> If `pip install -e .` fails because of restricted network/proxy, use an environment
-> with internet access (or an internal package mirror), then rerun the same command.
-
-## Tutoriel — lancer l'application
-
-### 1) Lancer le CLI
-
-From the repository root (with your virtualenv active):
+Show the CLI:
 
 ```powershell
 optimaster --help
 ```
 
-If entry points are not available in your shell, use module mode:
+Fallback if entry points are not available:
 
 ```powershell
 python -m optimaster --help
 ```
 
-### 2) Analyser un fichier audio
+Analyze a file:
 
 ```powershell
 optimaster analyze "C:\path\to\track.wav"
 ```
 
-### 3) Lancer une optimisation complète
+Run a full optimization:
 
 ```powershell
 optimaster optimize "C:\path\to\track.wav" --output-dir ".\renders"
 ```
 
-Modes available:
+Choose the mode:
 
 ```powershell
 optimaster optimize "C:\path\to\track.wav" --mode safe
@@ -126,79 +81,85 @@ optimaster optimize "C:\path\to\track.wav" --mode balanced
 optimaster optimize "C:\path\to\track.wav" --mode louder
 ```
 
-### 3b) Run batch optimization
+Run batch optimization:
 
 ```powershell
 optimaster optimize-batch "C:\path\to\a.wav" "C:\path\to\b.wav" --output-dir ".\renders"
 ```
 
-### 4) Afficher les presets
+List presets:
 
 ```powershell
 optimaster presets
 ```
 
-### 5) Utiliser un fichier de config YAML
+Use a YAML config:
 
 ```powershell
 optimaster optimize "C:\path\to\track.wav" --config ".\config.example.yaml"
 ```
 
-### 6) Lancer l'application desktop (GUI)
+Launch the GUI:
 
 ```powershell
 optimaster-gui
 ```
 
-If needed, fallback to module mode:
+Fallback:
 
 ```powershell
 python -c "from optimaster.gui import run; raise SystemExit(run())"
 ```
 
-Current GUI v0 includes:
+## GUI Features
+
+Current GUI includes:
 - drag and drop or file picker for WAV/FLAC
 - source analysis with profile and diagnostics
 - Safe / Balanced / Louder mode selection
 - full optimization run with progress feedback
 - ranked candidate table with scoring reasons
 - waveform preview in the source summary
-- local session history and A/B listening playback
+- local session history
+- A/B listening playback
 - listening note capture for the selected candidate
 - export of the selected rendered candidate
 
-## Audit "install now" (snapshot: 2026-04-22)
+## Validation Snapshot
 
-Checks run in this repository snapshot:
+Validated in this environment on April 24, 2026:
+- `python -m pip install -e .`: passed
+- `python -m pytest -q`: passed when temp directories were redirected away from restricted Windows temp locations
+- `python -m optimaster --help`: passed
+- `python -m optimaster presets`: passed
+- `python -m optimaster analyze .tmp\sample.wav`: passed
+- `python -m optimaster optimize .tmp\sample.wav --output-dir .tmp\renders`: passed
+- `python -m optimaster optimize-batch ...`: passed
+- `python -m optimaster add-note ...`: passed
+- GUI import (`from optimaster.gui import MainWindow`): passed
+- `ffmpeg -version`: passed
 
-- `pytest -q` fails if the package is not installed into the environment (`ModuleNotFoundError: optimaster`).
-- `PYTHONPATH=src pytest -q` passes (`4 passed`).
-- `PYTHONPATH=src python -m optimaster --help` works (CLI command tree is valid).
-- GUI import currently fails in this container because `PySide6` is not installed.
-- `ffmpeg -version` fails in this container because FFmpeg is missing from `PATH`.
+Note about `pytest` on this machine:
+- some runs fail if `pytest` uses the default Windows temp directory because that temp location has permission issues
+- the project tests themselves pass when `TMP` / `TEMP` and `--basetemp` are redirected to writable directories
 
-Interpretation for a real Windows install **right now**:
-- the codebase itself is testable and CLI-ready,
-- but a fresh machine still needs the runtime prerequisites installed successfully:
-  1) Python deps (`pip install -e .`),
-  2) FFmpeg in `PATH`.
+## Built-In Logic
 
-## Built-in logic
-
-The default strategy is:
+Default strategy:
 - classify source behavior before processing
-- if the source file is already hot, avoid aggressive gain-up presets
-- if true peak is too close to zero, prefer trim / safe limit presets
-- preserve dynamics when LRA is already healthy
-- penalize outputs with unsafe true peaks
-- penalize transformations too far from source loudness
+- avoid aggressive gain-up presets when the source is already hot
+- prefer safer true-peak margins
+- preserve dynamics when possible
+- penalize unsafe true peaks
+- penalize transformations that move too far from source loudness
 
-## Example outputs
+## Outputs
 
 OptiMaster writes:
-- rendered candidate WAV files
+- rendered candidate audio files
 - `analysis.json`
 - `ranking.json`
+- optional `preferences.json`
 
 ## License
 

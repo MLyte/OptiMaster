@@ -11,6 +11,15 @@ from optimaster.presets import BUILTIN_PRESETS
 from optimaster.service import EngineService
 
 
+def _batch_target_dir(output_dir: str | Path, source: Path, index: int, seen: dict[str, int]) -> Path:
+    base_dir = Path(output_dir)
+    stem_key = source.stem.casefold()
+    count = seen.get(stem_key, 0)
+    seen[stem_key] = count + 1
+    suffix = f"-{index:02d}" if count > 0 else ""
+    return base_dir / f"{source.stem}{suffix}"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="optimaster", description="Local FFmpeg-based mastering helper")
     parser.add_argument("--config", help="Path to YAML config file", default=None)
@@ -89,9 +98,10 @@ def cmd_optimize_batch(input_files: list[str], output_dir: str, mode: str | None
     selected_mode = OptimizationMode(mode) if mode else cfg.default_mode
 
     print(f"Running batch on {len(input_files)} file(s)...")
-    for input_file in input_files:
+    seen_stems: dict[str, int] = {}
+    for index, input_file in enumerate(input_files, start=1):
         source = Path(input_file)
-        target_dir = Path(output_dir) / source.stem
+        target_dir = _batch_target_dir(output_dir, source, index, seen_stems)
         session = service.optimize(input_file=source, output_dir=target_dir, mode=selected_mode)
         best = session.best_candidate.preset.name if session.best_candidate else "none"
         print(f"- {source.name}: best={best} | session={session.session_id} | output={target_dir}")
