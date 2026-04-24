@@ -1,37 +1,57 @@
 # OptiMaster
 
-Local audio finishing assistant for hot premaster files.
+OptiMaster is a local audio finishing assistant for WAV and FLAC premaster files.
 
-OptiMaster is a Python app that automates a prudent, reproducible finishing workflow:
-- analyze an input WAV or FLAC with FFmpeg
-- classify the source profile
-- generate restrained finishing candidates adapted to the source
-- re-analyze each candidate and score them
-- recommend the most balanced result while keeping final choice human
+It analyzes a source file, renders several mastering candidates with FFmpeg, measures the results, then helps you compare and export the best version. It is designed for cautious, repeatable finishing work, not for one-click miracle mastering.
 
-It is intentionally modest: it does not claim to create a universal "perfect master".
+## Public Beta
 
-## Current Scope
+This project is in beta and is meant to be tested.
 
-MVP:
-- CLI first
-- local only
-- FFmpeg-based
-- source-aware candidate selection
-- Safe / Balanced / Louder modes
-- analysis + scoring + export
-- desktop GUI for import, analysis, ranking, playback, and export
+Expect rough edges, especially around packaging, edge-case audio files, and UI polish. The app is useful today for local experiments, but you should still verify exports with your normal monitoring chain before release.
 
-Implemented in the current codebase:
-- batch processing via `optimaster optimize-batch`
-- listening notes / preference learning via `optimaster add-note`
-- waveform preview in the GUI source panel
-- local session history in the GUI
-- A/B listening playback in the GUI
+Good beta feedback includes:
+- files that fail to analyze or render
+- moments where the workflow feels unclear
+- candidate choices that sound worse than expected
+- confusing loudness or true-peak results
+- Windows packaging and shortcut/icon issues
 
-## Installation
+## What It Does
 
-Windows-first setup:
+OptiMaster currently supports:
+- WAV / FLAC import
+- source loudness analysis with FFmpeg
+- source profile diagnostics
+- Safe / Balanced / Louder optimization modes
+- custom target LUFS in the GUI
+- strict true-peak option
+- multiple rendered candidates per session
+- an OptiMaster technical fallback when a custom LUFS target is too aggressive
+- ranked recommendations with scoring reasons
+- before / after comparison for LUFS, true peak, dynamics, and score
+- A/B playback inside the GUI
+- waveform preview and playback visualization
+- export with clean incremental filenames
+- local session history
+- CLI usage for analysis, rendering, batch processing, presets, and listening notes
+
+## What It Is Not
+
+OptiMaster does not replace a mastering engineer.
+
+It does not guarantee a release-ready master, does not know your creative intent, and does not judge translation on real playback systems. It gives you controlled candidates and useful measurements so you can make a better decision.
+
+## Requirements
+
+- Windows is the primary target right now
+- Python 3.11+
+- FFmpeg available on `PATH`
+- A local checkout of this repository
+
+Python dependencies are declared in [pyproject.toml](pyproject.toml). The GUI uses PySide6.
+
+## Install From Source
 
 ```powershell
 py -3.11 -m venv .venv
@@ -41,65 +61,9 @@ python -m pip install -e .
 ffmpeg -version
 ```
 
-Requirements:
-- Python 3.11+
-- FFmpeg available on `PATH`
+If `ffmpeg -version` fails, install FFmpeg and make sure `ffmpeg.exe` is available on `PATH`.
 
-The GUI dependency `PySide6` is included in the project dependencies.
-
-## Quick Start
-
-Show the CLI:
-
-```powershell
-optimaster --help
-```
-
-Fallback if entry points are not available:
-
-```powershell
-python -m optimaster --help
-```
-
-Analyze a file:
-
-```powershell
-optimaster analyze "C:\path\to\track.wav"
-```
-
-Run a full optimization:
-
-```powershell
-optimaster optimize "C:\path\to\track.wav" --output-dir ".\renders"
-```
-
-Choose the mode:
-
-```powershell
-optimaster optimize "C:\path\to\track.wav" --mode safe
-optimaster optimize "C:\path\to\track.wav" --mode balanced
-optimaster optimize "C:\path\to\track.wav" --mode louder
-```
-
-Run batch optimization:
-
-```powershell
-optimaster optimize-batch "C:\path\to\a.wav" "C:\path\to\b.wav" --output-dir ".\renders"
-```
-
-List presets:
-
-```powershell
-optimaster presets
-```
-
-Use a YAML config:
-
-```powershell
-optimaster optimize "C:\path\to\track.wav" --config ".\config.example.yaml"
-```
-
-Launch the GUI:
+## Launch The App
 
 ```powershell
 optimaster-gui
@@ -111,55 +75,115 @@ Fallback:
 python -c "from optimaster.gui import run; raise SystemExit(run())"
 ```
 
-## GUI Features
+## Recommended GUI Workflow
 
-Current GUI includes:
-- drag and drop or file picker for WAV/FLAC
-- source analysis with profile and diagnostics
-- Safe / Balanced / Louder mode selection
-- full optimization run with progress feedback
-- ranked candidate table with scoring reasons
-- waveform preview in the source summary
-- local session history
-- A/B listening playback
-- listening note capture for the selected candidate
-- export of the selected rendered candidate
+1. Choose a WAV or FLAC premaster.
+2. Analyze the source.
+3. Set the mode and optional target LUFS.
+4. Render candidates.
+5. Compare the recommended version, your LUFS-target version, and the OptiMaster technical fallback.
+6. Listen A/B.
+7. Export the selected version.
 
-## Validation Snapshot
+Exports are suggested one folder above `renders` with incremental names such as `Track_export_01.wav`.
 
-Validated in this environment on April 24, 2026:
-- `python -m pip install -e .`: passed
-- `python -m pytest -q`: passed when temp directories were redirected away from restricted Windows temp locations
-- `python -m optimaster --help`: passed
-- `python -m optimaster presets`: passed
-- `python -m optimaster analyze .tmp\sample.wav`: passed
-- `python -m optimaster optimize .tmp\sample.wav --output-dir .tmp\renders`: passed
-- `python -m optimaster optimize-batch ...`: passed
-- `python -m optimaster add-note ...`: passed
-- GUI import (`from optimaster.gui import MainWindow`): passed
-- `ffmpeg -version`: passed
+## CLI Quick Start
 
-Note about `pytest` on this machine:
-- some runs fail if `pytest` uses the default Windows temp directory because that temp location has permission issues
-- the project tests themselves pass when `TMP` / `TEMP` and `--basetemp` are redirected to writable directories
+Show help:
 
-## Built-In Logic
+```powershell
+optimaster --help
+```
 
-Default strategy:
-- classify source behavior before processing
-- avoid aggressive gain-up presets when the source is already hot
-- prefer safer true-peak margins
-- preserve dynamics when possible
-- penalize unsafe true peaks
-- penalize transformations that move too far from source loudness
+Analyze a file:
+
+```powershell
+optimaster analyze "C:\path\to\track.wav"
+```
+
+Render and score candidates:
+
+```powershell
+optimaster optimize "C:\path\to\track.wav" --output-dir ".\renders"
+```
+
+Choose a mode:
+
+```powershell
+optimaster optimize "C:\path\to\track.wav" --mode safe
+optimaster optimize "C:\path\to\track.wav" --mode balanced
+optimaster optimize "C:\path\to\track.wav" --mode louder
+```
+
+Batch process files:
+
+```powershell
+optimaster optimize-batch "C:\path\to\a.wav" "C:\path\to\b.wav" --output-dir ".\renders"
+```
+
+List built-in presets:
+
+```powershell
+optimaster presets
+```
+
+Use a YAML config:
+
+```powershell
+optimaster --config ".\config.example.yaml" optimize "C:\path\to\track.wav" --output-dir ".\renders"
+```
+
+Add a listening note:
+
+```powershell
+optimaster add-note transparent_trim --rating 4 --preferences ".\renders\preferences.json"
+```
 
 ## Outputs
 
-OptiMaster writes:
+Each optimization session can produce:
 - rendered candidate audio files
 - `analysis.json`
 - `ranking.json`
 - optional `preferences.json`
+- waveform preview images for the GUI
+
+The rendered candidates in `renders` are working files. Use the GUI export action for a clean final filename.
+
+## Packaging Status
+
+Packaging is still beta. The current Windows packaging direction is documented in [WINDOWS_PACKAGING.md](WINDOWS_PACKAGING.md).
+
+The intended release build uses PyInstaller with the bundled OptiMaster icon:
+
+```powershell
+pyinstaller --noconfirm --windowed --name OptiMaster --icon src/optimaster/assets/optimaster_icon.ico --collect-all PySide6 src/optimaster/__main__.py
+```
+
+## Testing
+
+Run the test suite:
+
+```powershell
+python -m pytest -q
+```
+
+On some Windows setups, pytest may fail because the default temp directory is not writable. In that case, redirect temp files into the workspace:
+
+```powershell
+$env:TEMP="C:\www\OptiMaster\.tmp2"
+$env:TMP="C:\www\OptiMaster\.tmp2"
+New-Item -ItemType Directory -Force -Path .tmp2 | Out-Null
+python -m pytest -q --basetemp .pytest-run -p no:cacheprovider
+```
+
+## Known Beta Notes
+
+- FFmpeg must be installed separately for source runs.
+- The GUI is Windows-first and still evolving.
+- Target LUFS can be pushed too high; OptiMaster now renders a technical fallback so you can compare instead of restarting.
+- Loudness metrics are technical guidance, not a final listening decision.
+- Session history and preferences are local files, not cloud-synced.
 
 ## License
 

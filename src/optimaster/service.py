@@ -99,10 +99,14 @@ class EngineService:
         destination_profile: str = "streaming_prudent",
         strict_true_peak: bool = False,
         target_lufs: float | None = None,
+        maximize_loudness: bool = False,
         progress_callback: ProgressCallback | None = None,
     ) -> OptimizationSession:
         selected_mode = mode or self.config.default_mode
-        scoring_cfg = self._runtime_scoring_config(destination_profile, strict_true_peak, target_lufs)
+        scoring_cfg = self._target_scoring_config(
+            self._runtime_scoring_config(destination_profile, strict_true_peak, target_lufs),
+            target_lufs,
+        )
         fallback_scoring_cfg = self._runtime_scoring_config(destination_profile, strict_true_peak)
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -128,7 +132,7 @@ class EngineService:
         preference_path = self.preference_path or (out_dir / "preferences.json")
         preset_bias = PreferenceStore(preference_path).load()
 
-        render_jobs = self._render_jobs(presets, target_lufs, scoring_cfg, fallback_scoring_cfg)
+        render_jobs = self._render_jobs(presets, target_lufs, scoring_cfg, fallback_scoring_cfg, maximize_loudness)
         results: list[CandidateResult] = []
         total_jobs = max(len(render_jobs), 1)
         for idx, (preset, render_target_lufs, job_scoring_cfg) in enumerate(render_jobs, start=1):
@@ -154,8 +158,13 @@ class EngineService:
             )
             if target_lufs is not None and render_target_lufs is None:
                 reasons.append("OptiMaster fallback: ranked without forcing the requested LUFS target.")
+            elif maximize_loudness and render_target_lufs is not None:
+                loudness_gain = max(0.0, output_metrics.integrated_lufs - analysis.metrics.integrated_lufs)
+                if loudness_gain > 0:
+                    score = min(score + min(loudness_gain * 3.0, 12.0), 100.0)
+                reasons.append(f"Loudest safe search: tested {render_target_lufs:.1f} LUFS.")
             elif target_lufs is not None:
-                reasons.append(f"User target render: aimed at {target_lufs:.1f} LUFS.")
+                reasons.append(f"Performance target: prioritized the requested {target_lufs:.1f} LUFS.")
             bias = preset_bias.get(preset.name, 0.0)
             if abs(bias) > 0:
                 score += bias
@@ -225,18 +234,48 @@ class EngineService:
             f"LRA={max(scoring_cfg.preferred_lra_min, 7.0):.1f}"
         )
 
+    def _target_scoring_config(self, scoring_cfg, target_lufs: float | None):
+        if target_lufs is None:
+            return scoring_cfg
+        return replace(
+            scoring_cfg,
+            min_lra=min(scoring_cfg.min_lra, 3.5),
+            preferred_lra_min=min(scoring_cfg.preferred_lra_min, 4.5),
+            max_lufs_delta_from_source=max(scoring_cfg.max_lufs_delta_from_source, 5.0),
+        )
+
     def _render_jobs(
         self,
         presets: list[CandidatePreset],
         target_lufs: float | None,
         target_scoring_cfg,
         fallback_scoring_cfg,
+        maximize_loudness: bool = False,
     ) -> list[tuple[CandidatePreset, float | None, object]]:
         if target_lufs is None:
             return [(preset, None, target_scoring_cfg) for preset in presets]
         jobs: list[tuple[CandidatePreset, float | None, object]] = []
         for preset in presets:
-            jobs.append((preset, target_lufs, target_scoring_cfg))
+            if maximize_loudness:
+                for loudness_target in (-10.0, -9.0, -8.0, -7.0, -6.0):
+                    loudness_preset = CandidatePreset(
+                        name=f"{preset.name}_loudest_{self._target_slug(loudness_target)}",
+                        description=f"{preset.description} Loudest safe search at {loudness_target:.1f} LUFS.",
+                        ffmpeg_filter=preset.ffmpeg_filter,
+                        families=preset.families,
+                    )
+                    jobs.append(
+                        (
+                            loudness_preset,
+                            loudness_target,
+                            self._target_scoring_config(
+                                self._runtime_scoring_config("club_loud", False, loudness_target),
+                                loudness_target,
+                            ),
+                        )
+                    )
+            else:
+                jobs.append((preset, target_lufs, target_scoring_cfg))
             fallback_preset = CandidatePreset(
                 name=f"{preset.name}_optimaster",
                 description=f"{preset.description} OptiMaster technical fallback.",
@@ -245,6 +284,9 @@ class EngineService:
             )
             jobs.append((fallback_preset, None, fallback_scoring_cfg))
         return jobs
+
+    def _target_slug(self, target_lufs: float) -> str:
+        return f"m{abs(target_lufs):.1f}".replace(".", "_")
 
     def _write_exports(self, session: OptimizationSession, output_dir: Path) -> None:
         (output_dir / "analysis.json").write_text(

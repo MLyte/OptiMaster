@@ -41,7 +41,7 @@ from optimaster.config import load_config
 from optimaster.errors import AppError
 from optimaster.ffmpeg import render_waveform_preview
 from optimaster.history import SessionHistoryStore
-from optimaster.models import CandidateResult, OptimizationMode, OptimizationSession, SourceAnalysis
+from optimaster.models import CandidateResult, OptimizationMode, OptimizationSession, SourceAnalysis, SourceProfile
 from optimaster.service import EngineService
 
 
@@ -79,6 +79,7 @@ class WorkerRequest:
     destination_profile: str
     strict_true_peak: bool
     target_lufs: float | None
+    maximize_loudness: bool
     source_analysis: SourceAnalysis | None = None
 
 
@@ -139,6 +140,7 @@ class EngineWorker(QObject):
                     destination_profile=self.request.destination_profile,
                     strict_true_peak=self.request.strict_true_peak,
                     target_lufs=self.request.target_lufs,
+                    maximize_loudness=self.request.maximize_loudness,
                     progress_callback=self._emit_progress,
                 )
             self.finished.emit(result)
@@ -361,8 +363,8 @@ class MainWindow(QMainWindow):
     def _build_ui(self) -> None:
         central = QWidget()
         root = QVBoxLayout(central)
-        root.setContentsMargins(20, 20, 20, 20)
-        root.setSpacing(16)
+        root.setContentsMargins(24, 22, 24, 24)
+        root.setSpacing(18)
 
         self.workflow_tabs = QTabWidget()
         self.workflow_tabs.setObjectName("workflowTabs")
@@ -373,7 +375,8 @@ class MainWindow(QMainWindow):
         source_layout.setSpacing(14)
         source_layout.addWidget(self._build_header())
         source_layout.addWidget(self._build_controls())
-        source_layout.addWidget(self._build_source_analysis(), stretch=1)
+        source_layout.addWidget(self._build_source_analysis())
+        source_layout.addWidget(self._build_render_controls())
 
         candidate_step = QWidget()
         candidate_layout = QVBoxLayout(candidate_step)
@@ -388,9 +391,9 @@ class MainWindow(QMainWindow):
         listening_layout.setSpacing(14)
         listening_layout.addWidget(self._build_listening_tools(), stretch=1)
 
-        self.workflow_tabs.addTab(source_step, "1. Source")
-        self.workflow_tabs.addTab(candidate_step, "2. Candidate")
-        self.workflow_tabs.addTab(listening_step, "3. Listen / Export")
+        self.workflow_tabs.addTab(source_step, "Source")
+        self.workflow_tabs.addTab(candidate_step, "Versions")
+        self.workflow_tabs.addTab(listening_step, "Listen / Export")
         root.addWidget(self.workflow_tabs, stretch=1)
 
         self.setCentralWidget(central)
@@ -404,7 +407,7 @@ class MainWindow(QMainWindow):
         drop_layout = QVBoxLayout(self.drop_frame)
         drop_layout.setContentsMargins(18, 18, 18, 18)
 
-        title = QLabel("1. Choose a WAV or FLAC premaster")
+        title = QLabel("Drop a WAV or FLAC premaster")
         title.setObjectName("heroTitle")
         subtitle = QLabel(
             "Classic path: choose a file, analyze it, then render candidates."
@@ -415,7 +418,7 @@ class MainWindow(QMainWindow):
         self.input_edit = QLineEdit()
         self.input_edit.setPlaceholderText(r"C:\path\to\track.wav")
         self.input_edit.textChanged.connect(self._update_actions)
-        browse_button = QPushButton("1. Choose file")
+        browse_button = QPushButton("Choose file")
         browse_button.setObjectName("secondaryAction")
         browse_button.clicked.connect(self._browse_input_file)
         row.addWidget(self.input_edit, stretch=1)
@@ -429,8 +432,27 @@ class MainWindow(QMainWindow):
         return box
 
     def _build_controls(self) -> QGroupBox:
-        box = QGroupBox("2-3. Analysis and rendering")
+        box = QGroupBox("Analyze source")
         layout = QGridLayout(box)
+        layout.setHorizontalSpacing(16)
+        layout.setVerticalSpacing(10)
+
+        self.analyze_button = QPushButton("Analyze source")
+        self.analyze_button.setObjectName("stepAction")
+        self.analyze_button.clicked.connect(self._run_analyze)
+        self.status_label = QLabel("Step 1: choose a source file to begin.")
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+
+        layout.addWidget(self.analyze_button, 0, 0)
+        layout.addWidget(self.status_label, 0, 1, 1, 2)
+        layout.addWidget(self.progress_bar, 0, 3)
+        return box
+
+    def _build_render_controls(self) -> QGroupBox:
+        self.render_box = QGroupBox("Render candidates")
+        layout = QGridLayout(self.render_box)
         layout.setHorizontalSpacing(16)
         layout.setVerticalSpacing(10)
 
@@ -453,6 +475,11 @@ class MainWindow(QMainWindow):
         self.target_lufs_spin.setValue(-9.0)
         self.target_lufs_spin.setSuffix(" LUFS")
         self.target_lufs_spin.setToolTip("Target loudness for rendered candidates. Higher, closer to zero, sounds louder.")
+        self.max_loudness_checkbox = QCheckBox("Find loudest safe version")
+        self.max_loudness_checkbox.setToolTip(
+            "Try several louder LUFS targets and rank the best loud/safe compromise."
+        )
+        self.max_loudness_checkbox.toggled.connect(self._update_actions)
 
         output_button = QPushButton("Choose output")
         output_button.setObjectName("utilityAction")
@@ -460,43 +487,64 @@ class MainWindow(QMainWindow):
         config_button = QPushButton("Load config")
         config_button.setObjectName("utilityAction")
         config_button.clicked.connect(self._browse_config_file)
+        self.advanced_button = QPushButton("Show advanced options")
+        self.advanced_button.setObjectName("secondaryAction")
+        self.advanced_button.clicked.connect(self._toggle_advanced_options)
+        self.advanced_options_visible = False
 
-        self.analyze_button = QPushButton("2. Analyze source")
-        self.optimize_button = QPushButton("3. Render candidates")
-        self.export_button = QPushButton("6. Export selected candidate")
-        self.analyze_button.setObjectName("stepAction")
+        self.optimize_button = QPushButton("Render candidates")
+        self.export_button = QPushButton("Export final")
         self.optimize_button.setObjectName("stepAction")
         self.export_button.setObjectName("primaryAction")
-        self.analyze_button.clicked.connect(self._run_analyze)
         self.optimize_button.clicked.connect(self._run_optimize)
         self.export_button.clicked.connect(self._export_selected_candidate)
 
-        layout.addWidget(QLabel("Optimization mode"), 0, 0)
+        self.mode_label = QLabel("Optimization mode")
+        self.target_lufs_label = QLabel("Target LUFS")
+        self.destination_label = QLabel("Destination profile")
+        self.output_label = QLabel("Output folder")
+        self.config_label = QLabel("Config file")
+
+        layout.addWidget(self.mode_label, 0, 0)
         layout.addWidget(self.mode_combo, 0, 1)
-        layout.addWidget(QLabel("Target LUFS"), 0, 2)
+        layout.addWidget(self.target_lufs_label, 0, 2)
         layout.addWidget(self.target_lufs_spin, 0, 3)
-        layout.addWidget(QLabel("Destination profile"), 1, 0)
+        layout.addWidget(self.destination_label, 1, 0)
         layout.addWidget(self.destination_combo, 1, 1)
-        layout.addWidget(self.strict_tp_checkbox, 1, 2, 1, 2)
-        layout.addWidget(QLabel("Output folder"), 2, 0)
+        layout.addWidget(self.max_loudness_checkbox, 1, 2, 1, 2)
+        layout.addWidget(self.strict_tp_checkbox, 2, 2, 1, 2)
+        layout.addWidget(self.output_label, 2, 0)
         layout.addWidget(self.output_edit, 2, 1, 1, 2)
         layout.addWidget(output_button, 2, 3, Qt.AlignmentFlag.AlignRight)
-        layout.addWidget(QLabel("Config file"), 3, 0)
+        layout.addWidget(self.config_label, 3, 0)
         layout.addWidget(self.config_edit, 3, 1, 1, 2)
         layout.addWidget(config_button, 3, 3, Qt.AlignmentFlag.AlignRight)
-        layout.addWidget(self.analyze_button, 4, 0)
-        layout.addWidget(self.optimize_button, 4, 1, 1, 3)
+        layout.addWidget(self.advanced_button, 4, 0, 1, 4)
+        layout.addWidget(self.optimize_button, 5, 0, 1, 4)
 
-        self.status_label = QLabel("Step 1: choose a source file to begin.")
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)
-        layout.addWidget(self.status_label, 5, 0, 1, 3)
-        layout.addWidget(self.progress_bar, 5, 3)
-        return box
+        self.mastering_widgets = [
+            self.mode_label,
+            self.mode_combo,
+            self.target_lufs_label,
+            self.target_lufs_spin,
+            self.destination_label,
+            self.destination_combo,
+            self.max_loudness_checkbox,
+            self.strict_tp_checkbox,
+            self.optimize_button,
+        ]
+        self.advanced_widgets = [
+            self.output_label,
+            self.output_edit,
+            output_button,
+            self.config_label,
+            self.config_edit,
+            config_button,
+        ]
+        return self.render_box
 
     def _build_source_analysis(self) -> QGroupBox:
-        self.source_box = QGroupBox("2. Source analysis")
+        self.source_box = QGroupBox("Source analysis")
         source_layout = QFormLayout(self.source_box)
         self.metric_labels = {
             "profile": QLabel("Not analyzed"),
@@ -524,7 +572,7 @@ class MainWindow(QMainWindow):
         return self.source_box
 
     def _build_best_candidate(self) -> QGroupBox:
-        self.best_box = QGroupBox("4. Recommended choice")
+        self.best_box = QGroupBox("Recommended version")
         best_layout = QFormLayout(self.best_box)
         self.best_labels = {
             "name": QLabel("No candidate yet"),
@@ -538,9 +586,9 @@ class MainWindow(QMainWindow):
         self.rating_spin = QSpinBox()
         self.rating_spin.setRange(1, 5)
         self.rating_spin.setValue(3)
-        self.listen_selected_button = QPushButton("5. Listen to selected version")
+        self.listen_selected_button = QPushButton("Listen to selected version")
         self.listen_selected_button.clicked.connect(lambda: self.workflow_tabs.setCurrentIndex(2))
-        self.save_note_button = QPushButton("5C. Save listening note")
+        self.save_note_button = QPushButton("Save listening note")
         self.save_note_button.setObjectName("secondaryAction")
         self.save_note_button.clicked.connect(self._save_listening_note)
         best_layout.addRow("Chosen version", self.best_labels["name"])
@@ -554,12 +602,12 @@ class MainWindow(QMainWindow):
         return self.best_box
 
     def _build_listening_tools(self) -> QGroupBox:
-        box = QGroupBox("5-6. Compare and export")
+        box = QGroupBox("Compare and export")
         layout = QVBoxLayout(box)
 
         listening_row = QHBoxLayout()
-        self.play_source_button = QPushButton("5A. Play source (A)")
-        self.play_candidate_button = QPushButton("5B. Play selected candidate (B)")
+        self.play_source_button = QPushButton("Play source (A)")
+        self.play_candidate_button = QPushButton("Play candidate (B)")
         self.stop_audio_button = QPushButton("Stop")
         self.play_source_button.setObjectName("secondaryAction")
         self.play_candidate_button.setObjectName("secondaryAction")
@@ -603,9 +651,11 @@ class MainWindow(QMainWindow):
         self.history_table = QTableWidget(0, 5)
         self.history_table.setHorizontalHeaderLabels(["Date (UTC)", "Session", "Mode", "Best", "Source"])
         self.history_table.setAlternatingRowColors(True)
+        self.history_table.setShowGrid(False)
         self.history_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.history_table.verticalHeader().setVisible(False)
         self.history_table.horizontalHeader().setStretchLastSection(True)
+        self.history_table.verticalHeader().setDefaultSectionSize(38)
         self.history_table.setMaximumHeight(170)
         self.history_table.setVisible(False)
         self.history_button = QPushButton("Show session history")
@@ -621,28 +671,36 @@ class MainWindow(QMainWindow):
         return box
 
     def _build_results(self) -> QGroupBox:
-        box = QGroupBox("4. Choose a version")
+        box = QGroupBox("Choose a version")
         layout = QVBoxLayout(box)
 
         self.results_table = QTableWidget(0, 6)
         self.results_table.setHorizontalHeaderLabels(["Choice", "Version", "Score", "LUFS", "TP", "LRA"])
         self.results_table.setAlternatingRowColors(True)
+        self.results_table.setShowGrid(False)
         self.results_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.results_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.results_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.results_table.verticalHeader().setVisible(False)
         self.results_table.horizontalHeader().setStretchLastSection(True)
+        self.results_table.verticalHeader().setDefaultSectionSize(40)
+        self.results_table.setMaximumHeight(190)
         self.results_table.itemSelectionChanged.connect(self._update_selected_candidate_details)
 
+        self.details_button = QPushButton("Show scoring details")
+        self.details_button.setObjectName("secondaryAction")
+        self.details_button.clicked.connect(self._toggle_candidate_details)
         self.details_panel = QPlainTextEdit()
         self.details_panel.setReadOnly(True)
         self.details_panel.setPlaceholderText(
             "Step 4: select the recommended version, or an alternative if you want to compare."
         )
-        self.details_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.details_panel.setMaximumHeight(170)
+        self.details_panel.setVisible(False)
 
-        layout.addWidget(self.results_table, stretch=2)
-        layout.addWidget(self.details_panel, stretch=1)
+        layout.addWidget(self.results_table)
+        layout.addWidget(self.details_button)
+        layout.addWidget(self.details_panel)
         return box
 
     def _build_menu(self) -> None:
@@ -891,6 +949,13 @@ class MainWindow(QMainWindow):
         if file_path:
             self.config_edit.setText(file_path)
 
+    def _toggle_advanced_options(self) -> None:
+        self.advanced_options_visible = not self.advanced_options_visible
+        self.advanced_button.setText(
+            "Hide advanced options" if self.advanced_options_visible else "Show advanced options"
+        )
+        self._update_actions()
+
     def _set_input_path(self, path: str) -> None:
         path_obj = Path(path).resolve()
         previous_path = Path(self.input_edit.text()).resolve() if self.input_edit.text().strip() else None
@@ -937,6 +1002,7 @@ class MainWindow(QMainWindow):
             destination_profile=self.destination_combo.currentData(),
             strict_true_peak=self.strict_tp_checkbox.isChecked(),
             target_lufs=self.target_lufs_spin.value(),
+            maximize_loudness=self.max_loudness_checkbox.isChecked(),
             source_analysis=source_analysis,
         )
 
@@ -989,9 +1055,13 @@ class MainWindow(QMainWindow):
             self.current_analysis = result
             self.current_session = None
             self._populate_analysis(result)
+            recommended_lufs, lufs_reason = self._recommended_target_lufs(result)
+            self.target_lufs_spin.setValue(recommended_lufs)
             self._update_waveform_preview(result.source_path)
             self._clear_results()
-            self.status_label.setText("Step 2 complete. Step 3: render candidates.")
+            self.status_label.setText(
+                f"Step 2 complete. Suggested target: {recommended_lufs:.1f} LUFS ({lufs_reason})."
+            )
             self.progress_bar.setValue(100)
             self.workflow_tabs.setCurrentIndex(0)
             return
@@ -1025,6 +1095,18 @@ class MainWindow(QMainWindow):
         if analysis.profile.value in {"very_hot", "almost_ready"}:
             diagnostics.append("Source already hot: prioritize transparent and minimal moves.")
         self.metric_labels["diagnostics"].setText(" | ".join(diagnostics))
+
+    def _recommended_target_lufs(self, analysis: SourceAnalysis) -> tuple[float, str]:
+        metrics = analysis.metrics
+        if analysis.profile in {SourceProfile.VERY_HOT, SourceProfile.ALMOST_READY, SourceProfile.TOUCH_MINIMALLY}:
+            return -10.5, "source is already hot"
+        if analysis.profile is SourceProfile.LOW_DYNAMICS:
+            return -11.0, "limited dynamics need headroom"
+        if metrics.lra_lu >= 8.0 and metrics.true_peak_dbtp <= -1.0:
+            return -9.0, "healthy dynamics can take a louder pass"
+        if metrics.integrated_lufs <= -14.0:
+            return -10.0, "source has room for gain"
+        return -10.0, "balanced default"
 
     def _populate_session(self, session: OptimizationSession) -> None:
         self.results_table.setRowCount(len(session.candidates))
@@ -1120,6 +1202,11 @@ class MainWindow(QMainWindow):
             self._populate_best_candidate(selected)
         self._update_actions()
 
+    def _toggle_candidate_details(self) -> None:
+        visible = self.details_panel.isHidden()
+        self.details_panel.setVisible(visible)
+        self.details_button.setText("Hide scoring details" if visible else "Show scoring details")
+
     def _selected_candidate(self) -> CandidateResult | None:
         selected_ranges = self.results_table.selectedRanges()
         if not selected_ranges:
@@ -1130,17 +1217,23 @@ class MainWindow(QMainWindow):
         return item.data(Qt.ItemDataRole.UserRole)
 
     def _candidate_choice_label(self, candidate: CandidateResult) -> str:
+        if "_loudest_" in candidate.preset.name:
+            return "Loudest safe search"
         if candidate.preset.name.endswith("_optimaster"):
             return "OptiMaster technical choice"
         if self.current_session and self.current_session.candidates:
             if self.current_session.candidates[0] is candidate:
                 return "Recommended by OptiMaster"
-        return "Your LUFS target"
+        return "Performance target"
 
     def _candidate_version_label(self, candidate: CandidateResult) -> str:
         rank = self._candidate_rank(candidate)
         preset_name = candidate.preset.name.removesuffix("_optimaster")
+        if "_loudest_" in preset_name:
+            preset_name = preset_name.split("_loudest_", 1)[0]
         name = PRESET_DISPLAY_NAMES.get(preset_name, preset_name.replace("_", " ").title())
+        if "_loudest_" in candidate.preset.name:
+            name = f"{name} - Loudest safe"
         if candidate.preset.name.endswith("_optimaster"):
             name = f"{name} - OptiMaster choice"
         if rank is None:
@@ -1401,6 +1494,8 @@ class MainWindow(QMainWindow):
         self.destination_combo.setDisabled(busy)
         self.strict_tp_checkbox.setDisabled(busy)
         self.target_lufs_spin.setDisabled(busy)
+        self.max_loudness_checkbox.setDisabled(busy)
+        self.advanced_button.setDisabled(busy)
         self.input_edit.setDisabled(busy)
         self.output_edit.setDisabled(busy)
         self.config_edit.setDisabled(busy)
@@ -1421,9 +1516,18 @@ class MainWindow(QMainWindow):
         self.play_candidate_button.setEnabled(self._thread is None and has_candidate)
         self.listen_selected_button.setEnabled(self._thread is None and has_candidate)
         self.save_note_button.setEnabled(self._thread is None and has_candidate)
+        self.target_lufs_spin.setEnabled(self._thread is None and not self.max_loudness_checkbox.isChecked())
         self.workflow_tabs.setTabEnabled(0, True)
         self.workflow_tabs.setTabEnabled(1, has_candidates)
         self.workflow_tabs.setTabEnabled(2, has_candidate)
+        self._sync_control_visibility(has_analysis)
+
+    def _sync_control_visibility(self, has_analysis: bool) -> None:
+        self.render_box.setVisible(has_analysis)
+        for widget in self.mastering_widgets:
+            widget.setVisible(has_analysis)
+        for widget in self.advanced_widgets:
+            widget.setVisible(self.advanced_options_visible)
 
     def _show_error(self, message: str) -> None:
         QMessageBox.critical(self, "OptiMaster", message)

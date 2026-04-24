@@ -214,3 +214,79 @@ def test_optimize_applies_target_lufs_to_render_filter(monkeypatch, tmp_path: Pa
         "volume=-1.5dB,loudnorm=I=-8.0:TP=-0.8:LRA=7.0",
         "volume=-1.5dB",
     ]
+
+
+def test_target_lufs_uses_performance_scoring(monkeypatch, tmp_path: Path):
+    input_file = tmp_path / "input.wav"
+    input_file.write_bytes(b"stub")
+    metrics = LoudnessMetrics(-9.9, -1.0, 4.5, -20.2)
+    preset = CandidatePreset(
+        name="sweet_spot",
+        description="Balanced finish",
+        ffmpeg_filter="volume=-1.7dB,alimiter=limit=-1dB",
+    )
+    scoring_configs = []
+
+    monkeypatch.setattr("optimaster.service.validate_input_file", lambda _: input_file)
+    monkeypatch.setattr("optimaster.service.assert_ffmpeg_available", lambda _: None)
+    monkeypatch.setattr("optimaster.service.analyze_loudness", lambda *_args, **_kwargs: metrics)
+    monkeypatch.setattr("optimaster.service.classify_source", lambda *_: ("dynamic_ok", ["Stable profile"]))
+    monkeypatch.setattr("optimaster.service.select_presets_for_profile", lambda **_: [preset])
+    monkeypatch.setattr("optimaster.service.render_candidate", lambda **_kwargs: None)
+
+    def fake_score_candidate(**kwargs):
+        scoring_configs.append(kwargs["cfg"])
+        return 92.0, ["Good"]
+
+    monkeypatch.setattr("optimaster.service.score_candidate", fake_score_candidate)
+    monkeypatch.setattr("optimaster.service.EngineService._write_exports", lambda *_args, **_kwargs: None)
+
+    EngineService(AppConfig()).optimize(
+        input_file=input_file,
+        output_dir=tmp_path / "renders",
+        mode=OptimizationMode.LOUDER,
+        target_lufs=-8.0,
+    )
+
+    assert scoring_configs[0].min_lra == 3.5
+    assert scoring_configs[0].preferred_lra_min == 4.5
+    assert scoring_configs[0].max_lufs_delta_from_source == 5.0
+    assert scoring_configs[1].min_lra > scoring_configs[0].min_lra
+
+
+def test_maximize_loudness_renders_loudness_search(monkeypatch, tmp_path: Path):
+    input_file = tmp_path / "input.wav"
+    input_file.write_bytes(b"stub")
+    metrics = LoudnessMetrics(-10.0, -1.0, 6.0, -20.2)
+    preset = CandidatePreset(
+        name="sweet_spot",
+        description="Balanced finish",
+        ffmpeg_filter="volume=-1.7dB,alimiter=limit=-1dB",
+    )
+    render_filters: list[str] = []
+
+    monkeypatch.setattr("optimaster.service.validate_input_file", lambda _: input_file)
+    monkeypatch.setattr("optimaster.service.assert_ffmpeg_available", lambda _: None)
+    monkeypatch.setattr("optimaster.service.analyze_loudness", lambda *_args, **_kwargs: metrics)
+    monkeypatch.setattr("optimaster.service.classify_source", lambda *_: ("dynamic_ok", ["Stable profile"]))
+    monkeypatch.setattr("optimaster.service.select_presets_for_profile", lambda **_: [preset])
+    monkeypatch.setattr(
+        "optimaster.service.render_candidate",
+        lambda **kwargs: render_filters.append(kwargs["ffmpeg_filter"]),
+    )
+    monkeypatch.setattr("optimaster.service.score_candidate", lambda **_: (80.0, ["Good"]))
+    monkeypatch.setattr("optimaster.service.EngineService._write_exports", lambda *_args, **_kwargs: None)
+
+    session = EngineService(AppConfig()).optimize(
+        input_file=input_file,
+        output_dir=tmp_path / "renders",
+        mode=OptimizationMode.LOUDER,
+        target_lufs=-8.0,
+        maximize_loudness=True,
+    )
+
+    assert len(render_filters) == 6
+    assert render_filters[0].endswith("loudnorm=I=-10.0:TP=-0.5:LRA=7.0")
+    assert render_filters[4].endswith("loudnorm=I=-6.0:TP=-0.5:LRA=7.0")
+    assert render_filters[5] == "volume=-1.7dB,alimiter=limit=-1dB"
+    assert any("_loudest_" in candidate.preset.name for candidate in session.candidates)
