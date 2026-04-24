@@ -1357,11 +1357,13 @@ class MainWindow(QMainWindow):
         self.rating_spin.setMinimumHeight(44)
         self.listen_selected_button = QPushButton("Listen to selected version")
         self.listen_selected_button.setMinimumHeight(44)
+        self.listen_selected_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         set_lucide_icon(self.listen_selected_button, "headphones")
         self.listen_selected_button.clicked.connect(lambda: self.workflow_tabs.setCurrentIndex(2))
         self.save_note_button = QPushButton("Save listening note")
         self.save_note_button.setObjectName("secondaryAction")
         self.save_note_button.setMinimumHeight(44)
+        self.save_note_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         set_lucide_icon(self.save_note_button, "save")
         self.save_note_button.clicked.connect(self._save_listening_note)
 
@@ -1919,7 +1921,7 @@ class MainWindow(QMainWindow):
                 padding: 10px 14px;
                 color: #042f2e;
                 font-weight: 700;
-                min-height: 36px;
+                min-height: 40px;
             }
             QPushButton:hover {
                 background: #2dd4bf;
@@ -1946,7 +1948,7 @@ class MainWindow(QMainWindow):
             #stepAction {
                 background: #14b8a6;
                 color: #042f2e;
-                min-height: 18px;
+                min-height: 40px;
             }
             #stepAction:hover {
                 background: #2dd4bf;
@@ -1962,6 +1964,7 @@ class MainWindow(QMainWindow):
                 padding: 7px 10px;
                 min-width: 112px;
                 max-width: 132px;
+                min-height: 34px;
                 font-weight: 600;
             }
             #utilityAction:hover {
@@ -2002,7 +2005,7 @@ class MainWindow(QMainWindow):
                 padding: 8px;
                 background: #09090b;
                 selection-background-color: #14b8a6;
-                min-height: 34px;
+                min-height: 38px;
             }
             QLineEdit:focus, QComboBox:focus, QPlainTextEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {
                 border: 1px solid #e5b94d;
@@ -3023,7 +3026,7 @@ class MainWindow(QMainWindow):
                 height += 95
             return min(height, 940)
         if current_index == 1:
-            return 820 if self.details_panel.isVisible() else 720
+            return 900 if self.details_panel.isVisible() else 780
         return 820 if not self.history_table.isHidden() else 740
 
     def resizeEvent(self, event: object) -> None:
