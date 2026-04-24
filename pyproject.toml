@@ -19,6 +19,8 @@ dependencies = [
 
 [project.scripts]
 optimaster = "optimaster.cli:main"
+
+[project.gui-scripts]
 optimaster-gui = "optimaster.gui:run"
 
 [tool.setuptools]
