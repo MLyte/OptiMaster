@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Callable
@@ -28,6 +28,31 @@ PROFILE_MAP = {
 }
 
 ProgressCallback = Callable[[str, int], None]
+
+
+DESTINATION_SCORING_OVERRIDES = {
+    "streaming_prudent": {
+        "target_lufs_min": -12.0,
+        "target_lufs_max": -10.0,
+        "ideal_true_peak_max": -1.1,
+        "hard_true_peak_max": -0.8,
+    },
+    "club_loud": {
+        "target_lufs_min": -10.0,
+        "target_lufs_max": -8.0,
+        "ideal_true_peak_max": -1.0,
+        "hard_true_peak_max": -0.5,
+        "max_lufs_delta_from_source": 2.5,
+    },
+    "archive_safe": {
+        "target_lufs_min": -13.0,
+        "target_lufs_max": -11.0,
+        "ideal_true_peak_max": -1.2,
+        "hard_true_peak_max": -0.9,
+        "min_lra": 5.5,
+        "preferred_lra_min": 6.5,
+    },
+}
 
 
 @dataclass(slots=True)
@@ -60,9 +85,12 @@ class EngineService:
         input_file: str | Path,
         output_dir: str | Path,
         mode: OptimizationMode | None = None,
+        destination_profile: str = "streaming_prudent",
+        strict_true_peak: bool = False,
         progress_callback: ProgressCallback | None = None,
     ) -> OptimizationSession:
         selected_mode = mode or self.config.default_mode
+        scoring_cfg = self._runtime_scoring_config(destination_profile, strict_true_peak)
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -94,7 +122,7 @@ class EngineService:
             self._notify(progress_callback, f"Scoring {preset.name}", score_progress)
             score, reasons = score_candidate(
                 metrics=output_metrics,
-                cfg=self.config.scoring,
+                cfg=scoring_cfg,
                 source_metrics=analysis.metrics,
                 mode=selected_mode,
             )
@@ -120,6 +148,21 @@ class EngineService:
         self._write_exports(session, out_dir)
         self._notify(progress_callback, "Optimization complete", 100)
         return session
+
+    def _runtime_scoring_config(self, destination_profile: str, strict_true_peak: bool):
+        scoring_cfg = self.config.scoring
+        overrides = DESTINATION_SCORING_OVERRIDES.get(destination_profile, {})
+        if overrides:
+            scoring_cfg = replace(scoring_cfg, **overrides)
+        if strict_true_peak:
+            strict_ideal = min(scoring_cfg.ideal_true_peak_max, -1.2)
+            strict_hard = min(scoring_cfg.hard_true_peak_max, -1.0)
+            scoring_cfg = replace(
+                scoring_cfg,
+                ideal_true_peak_max=strict_ideal,
+                hard_true_peak_max=strict_hard,
+            )
+        return scoring_cfg
 
     def _write_exports(self, session: OptimizationSession, output_dir: Path) -> None:
         (output_dir / "analysis.json").write_text(
