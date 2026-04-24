@@ -1,62 +1,59 @@
-# Packaging Windows - Decision log (Phase 5)
+# Windows Packaging
 
-## 1) Decision: PyInstaller retenu pour la V1
+OptiMaster uses PyInstaller for the first public beta builds.
 
-Decision prise le **22 avril 2026** pour OptiMaster V1:
+The repository stays source-only: do not commit `dist/`, `build/`, `.spec`, `.zip`, or `.exe` files. Windows executables are generated from Git tags by GitHub Actions and attached to GitHub Releases.
 
-- **PyInstaller** retenu pour le packaging initial.
-- **Nuitka** garde en option d'optimisation future.
+## Release Output
 
-### Pourquoi ce choix
+The Windows beta release produces a portable archive:
 
-- cycle de mise en place plus court pour une release 1.0
-- meilleur ratio simplicite / fiabilite pour livrer vite
-- moins de friction pour embarquer des ressources externes (FFmpeg + presets + docs)
-
-## 2) FFmpeg bundle - strategie
-
-Le build Windows doit embarquer:
-
-- `ffmpeg.exe`
-- `ffprobe.exe`
-
-Convention recommandee:
-
-- dossier runtime: `vendor/ffmpeg/bin/`
-- fallback au `PATH` systeme si non present
-
-Verification minimum post-build:
-
-1. lancer l'app sur une machine Windows "propre"
-2. confirmer que `ffmpeg -version` et `ffprobe -version` sont detectables via l'app
-3. executer une analyse puis une optimisation complete
-4. verifier que `analysis.json` et `ranking.json` sont produits
-
-## 3) Procedure build/release reproductible
-
-### Pre-requis
-
-- Python 3.11+
-- dependances du projet installees
-- PyInstaller installe
-
-### Commandes
-
-```bash
-python -m pip install -e .
-python -m pip install pyinstaller
-pyinstaller --noconfirm --windowed --name OptiMaster --icon src/optimaster/assets/optimaster_icon.ico --collect-all PySide6 src/optimaster/__main__.py
+```text
+OptiMaster-{tag}-windows-x64.zip
 ```
 
-### Checklist release
+Inside the archive, users launch:
 
-1. nettoyer `dist/` et `build/`
-2. rebuild complet
-3. test smoke:
-   - ouverture GUI
-   - import WAV/FLAC
-   - analyse
-   - optimisation
-   - export
-4. archiver `dist/OptiMaster/` en zip versionne
-5. publier notes de version et hash du zip
+```text
+OptiMaster.exe
+```
+
+## FFmpeg Strategy
+
+For the first beta release, FFmpeg is not bundled.
+
+Users must install FFmpeg separately and make sure `ffmpeg.exe` and `ffprobe.exe` are available on `PATH`. Bundling FFmpeg can be revisited later as a dedicated packaging task because it adds distribution, size, and maintenance considerations.
+
+## Local Build Command
+
+Install dependencies:
+
+```powershell
+python -m pip install -e .
+python -m pip install pyinstaller
+```
+
+Build the GUI executable:
+
+```powershell
+pyinstaller --noconfirm --windowed --name OptiMaster --icon src/optimaster/assets/optimaster_icon.ico --collect-all PySide6 src/optimaster/gui.py
+```
+
+Important: `src/optimaster/__main__.py` launches the CLI. The Windows GUI executable must build from `src/optimaster/gui.py`.
+
+## Release Checklist
+
+1. Run the test suite.
+2. Create a tag such as `v2026.4.24-beta.1`.
+3. Let GitHub Actions build the Windows archive.
+4. Download the release archive on Windows.
+5. Smoke test:
+   - open `OptiMaster.exe`
+   - import a WAV or FLAC file
+   - analyze the source
+   - create versions
+   - listen A/B
+   - export the final file
+   - start a new analysis without restarting the app
+6. Check that the app icon appears on the executable.
+7. Publish release notes and the generated checksum.

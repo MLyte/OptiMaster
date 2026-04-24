@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QRectF, QThread, QTimer, Qt, QUrl, Signal
-from PySide6.QtGui import QAction, QColor, QDragEnterEvent, QDropEvent, QIcon, QPainter, QPixmap
+from PySide6.QtCore import QObject, QRectF, QSize, QThread, QTimer, Qt, QUrl, Signal
+from PySide6.QtGui import QAction, QColor, QDragEnterEvent, QDropEvent, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication,
@@ -117,6 +117,26 @@ SOURCE_PROFILE_DISPLAY_NAMES = {
     SourceProfile.DYNAMIC_OK: "Healthy dynamics",
     SourceProfile.TOUCH_MINIMALLY: "Needs a light touch",
 }
+LUCIDE_ICON_PATHS = {
+    "activity": '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+    "audio-lines": '<path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/>',
+    "download": '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
+    "eye": '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
+    "file-cog": '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h6"/><path d="M14 2v6h6"/><path d="M12 18h.01"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.65 1.65 0 0 0 15 19.4a1.65 1.65 0 0 0-1 .6l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 11.6 15a1.65 1.65 0 0 0-.6-1l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 15 11.6a1.65 1.65 0 0 0 1-.6l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 15Z"/><circle cx="15" cy="15" r="1"/>',
+    "file-plus": '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15h6"/>',
+    "folder-open": '<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6A2 2 0 0 1 18.46 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v2"/>',
+    "headphones": '<path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/>',
+    "history": '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+    "list": '<path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/>',
+    "play": '<polygon points="5 3 19 12 5 21 5 3"/>',
+    "refresh": '<path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M16 8h5V3"/>',
+    "save": '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>',
+    "settings": '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.72l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z"/><circle cx="12" cy="12" r="3"/>',
+    "square": '<rect width="14" height="14" x="5" y="5" rx="2"/>',
+    "upload": '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>',
+    "wand": '<path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9H6"/><path d="M20 9h-2"/><path d="m17.8 6.2 1.4-1.4"/><path d="m10.8 13.2-1.4 1.4"/><path d="m10.8 4.8-1.4-1.4"/><path d="m17.8 11.8 1.4 1.4"/><path d="M4 20 14 10"/>',
+    "waveform": '<path d="M2 13h2l2-7 4 14 4-18 4 11h4"/>',
+}
 
 
 def format_metric(value: float, unit: str) -> str:
@@ -128,6 +148,23 @@ def app_icon() -> QIcon:
     if not icon_path.is_file():
         icon_path = resources.files("optimaster.assets").joinpath(APP_ICON_FALLBACK)
     return QIcon(str(icon_path))
+
+
+def lucide_icon(name: str, color: str = "#f4f4f5") -> QIcon:
+    path = LUCIDE_ICON_PATHS[name]
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        f'viewBox="0 0 24 24" fill="none" stroke="{color}" stroke-width="2" '
+        f'stroke-linecap="round" stroke-linejoin="round">{path}</svg>'
+    )
+    pixmap = QPixmap()
+    pixmap.loadFromData(svg.encode("utf-8"), "SVG")
+    return QIcon(pixmap)
+
+
+def set_lucide_icon(button: QPushButton, name: str, color: str = "#f4f4f5") -> None:
+    button.setIcon(lucide_icon(name, color))
+    button.setIconSize(QSize(17, 17))
 
 
 @dataclass(slots=True)
@@ -242,47 +279,48 @@ class WaveformWorker(QObject):
             self.failed.emit(str(self.request.source_path))
 
 
-class MetricCard(QFrame):
-    def __init__(self, title: str) -> None:
+class ComparisonRow(QFrame):
+    def __init__(self, metric: str) -> None:
         super().__init__()
-        self.setObjectName("metricCard")
+        self.setObjectName("comparisonRow")
         layout = QGridLayout(self)
-        layout.setHorizontalSpacing(10)
-        layout.setVerticalSpacing(6)
+        layout.setColumnStretch(0, 2)
+        layout.setColumnStretch(1, 2)
+        layout.setColumnStretch(2, 2)
+        layout.setColumnStretch(3, 2)
+        layout.setColumnStretch(4, 4)
+        layout.setHorizontalSpacing(12)
+        layout.setVerticalSpacing(4)
 
-        self.title_label = QLabel(title)
-        self.title_label.setObjectName("metricTitle")
-
+        self.metric_label = QLabel(metric)
+        self.metric_label.setObjectName("comparisonMetric")
         self.before_label = QLabel("--")
-        self.before_label.setObjectName("metricBefore")
+        self.before_label.setObjectName("comparisonValue")
         self.after_label = QLabel("--")
-        self.after_label.setObjectName("metricAfter")
-        self.delta_label = QLabel("--")
-        self.delta_label.setObjectName("metricDelta")
+        self.after_label.setObjectName("comparisonValue")
+        self.change_label = QLabel("--")
+        self.change_label.setObjectName("comparisonChange")
+        self.verdict_label = QLabel("--")
+        self.verdict_label.setObjectName("comparisonVerdict")
+        self.verdict_label.setWordWrap(True)
 
-        self.bar = QProgressBar()
-        self.bar.setObjectName("deltaBar")
-        self.bar.setRange(0, 100)
-        self.bar.setValue(0)
-        self.bar.setTextVisible(False)
+        layout.addWidget(self.metric_label, 0, 0)
+        layout.addWidget(self.before_label, 0, 1)
+        layout.addWidget(self.after_label, 0, 2)
+        layout.addWidget(self.change_label, 0, 3)
+        layout.addWidget(self.verdict_label, 0, 4)
 
-        self.hint_label = QLabel("--")
-        self.hint_label.setObjectName("metricHint")
-        self.hint_label.setWordWrap(True)
-
-        layout.addWidget(self.title_label, 0, 0, 1, 2)
-        layout.addWidget(self.before_label, 1, 0)
-        layout.addWidget(self.after_label, 1, 1)
-        layout.addWidget(self.delta_label, 2, 1)
-        layout.addWidget(self.bar, 3, 0, 1, 2)
-        layout.addWidget(self.hint_label, 4, 0, 1, 2)
-
-    def set_values(self, before: str, after: str, delta: str, magnitude: int, hint: str) -> None:
+    def set_values(self, before: str, after: str, change: str, verdict: str, good: bool | None = None) -> None:
         self.before_label.setText(before)
         self.after_label.setText(after)
-        self.delta_label.setText(delta)
-        self.bar.setValue(max(0, min(magnitude, 100)))
-        self.hint_label.setText(hint)
+        self.change_label.setText(change)
+        self.verdict_label.setText(verdict)
+        if good is None:
+            self.change_label.setProperty("tone", "")
+        else:
+            self.change_label.setProperty("tone", "good" if good else "warn")
+        self.change_label.style().unpolish(self.change_label)
+        self.change_label.style().polish(self.change_label)
 
 
 class PlaybackWaveform(QFrame):
@@ -389,13 +427,165 @@ class PlaybackWaveform(QFrame):
         painter.drawRoundedRect(QRectF(playhead_x - 2, bars_rect.top(), 4, bars_rect.height()), 2, 2)
 
 
+class RenderBusyOverlay(QWidget):
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setObjectName("renderBusyOverlay")
+        self._message = "Creating versions..."
+        self._phase = 0
+        self._timer = QTimer(self)
+        self._timer.setInterval(70)
+        self._timer.timeout.connect(self._tick)
+        self.hide()
+
+    def start(self, message: str) -> None:
+        self._message = message
+        self._phase = 0
+        self._timer.start()
+        self.show()
+        self.raise_()
+        self.update()
+
+    def stop(self) -> None:
+        self._timer.stop()
+        self.hide()
+
+    def set_message(self, message: str) -> None:
+        self._message = message
+        self.update()
+
+    def _tick(self) -> None:
+        self._phase = (self._phase + 12) % 360
+        self.update()
+
+    def paintEvent(self, event: object) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.fillRect(self.rect(), QColor(9, 9, 11, 52))
+
+        panel_width = min(360, max(260, self.width() - 120))
+        panel_height = 88
+        panel = QRectF(
+            (self.width() - panel_width) / 2,
+            (self.height() - panel_height) / 2,
+            panel_width,
+            panel_height,
+        )
+        painter.setPen(QPen(QColor("#3f3f46"), 1))
+        painter.setBrush(QColor("#111113"))
+        painter.drawRoundedRect(panel, 12, 12)
+
+        spinner = QRectF(panel.left() + 24, panel.top() + 25, 38, 38)
+        painter.setPen(QPen(QColor("#27272a"), 4))
+        painter.drawArc(spinner, 0, 360 * 16)
+        painter.setPen(QPen(QColor("#2dd4bf"), 4))
+        painter.drawArc(spinner, -self._phase * 16, 110 * 16)
+
+        text_rect = panel.adjusted(78, 18, -18, -18)
+        painter.setPen(QColor("#fafafa"))
+        painter.drawText(text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self._message)
+
+
+class AnimatedProgressBar(QProgressBar):
+    def __init__(self) -> None:
+        super().__init__()
+        self._phase = 0
+        self._is_animating = False
+        self._timer = QTimer(self)
+        self._timer.setInterval(45)
+        self._timer.timeout.connect(self._tick)
+
+    def start_animation(self) -> None:
+        self._is_animating = True
+        self._timer.start()
+        self.update()
+
+    def stop_animation(self) -> None:
+        self._is_animating = False
+        self._timer.stop()
+        self.update()
+
+    def _tick(self) -> None:
+        self._phase = (self._phase + 10) % 1000
+        self.update()
+
+    def paintEvent(self, event: object) -> None:
+        super().paintEvent(event)
+        if not self._is_animating or self.value() <= self.minimum():
+            return
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        progress_ratio = (self.value() - self.minimum()) / max(self.maximum() - self.minimum(), 1)
+        chunk_width = int(self.width() * progress_ratio)
+        if chunk_width <= 0:
+            return
+
+        shimmer_width = max(48, self.width() // 7)
+        x = int((self._phase / 1000) * (chunk_width + shimmer_width * 2)) - shimmer_width * 2
+        shimmer_rect = QRectF(x, 2, shimmer_width, max(4, self.height() - 4))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(255, 255, 255, 48))
+        painter.drawRoundedRect(shimmer_rect, 6, 6)
+
+
+class WorkPulse(QFrame):
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName("workPulse")
+        self.setMinimumSize(92, 30)
+        self.setMaximumHeight(30)
+        self._phase = 0
+        self._timer = QTimer(self)
+        self._timer.setInterval(65)
+        self._timer.timeout.connect(self._tick)
+        self.hide()
+
+    def start(self) -> None:
+        self._phase = 0
+        self._timer.start()
+        self.show()
+        self.update()
+
+    def stop(self) -> None:
+        self._timer.stop()
+        self.hide()
+
+    def _tick(self) -> None:
+        self._phase = (self._phase + 1) % 24
+        self.update()
+
+    def paintEvent(self, event: object) -> None:
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+
+        rect = self.rect().adjusted(8, 5, -8, -5)
+        bar_count = 9
+        gap = 4
+        bar_width = max(4, int((rect.width() - gap * (bar_count - 1)) / bar_count))
+        center_y = rect.center().y()
+        max_height = rect.height()
+        for idx in range(bar_count):
+            wave = ((idx * 3 + self._phase) % 12) / 11
+            height = 6 + int(max_height * (0.25 + 0.65 * wave))
+            x = rect.left() + idx * (bar_width + gap)
+            y = center_y - height / 2
+            color = QColor("#4de0d2" if idx % 2 else "#d7c6a1")
+            color.setAlpha(130 + int(90 * wave))
+            painter.setBrush(color)
+            painter.drawRoundedRect(QRectF(x, y, bar_width, height), 3, 3)
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(APP_TITLE)
         self.setWindowIcon(app_icon())
-        self.resize(1180, 720)
-        self.setMinimumSize(980, 560)
+        self.resize(1180, 460)
+        self.setMinimumSize(980, 420)
 
         self.current_analysis: SourceAnalysis | None = None
         self.current_session: OptimizationSession | None = None
@@ -429,6 +619,8 @@ class MainWindow(QMainWindow):
         root = QVBoxLayout(central)
         root.setContentsMargins(24, 22, 24, 24)
         root.setSpacing(18)
+
+        root.addWidget(self._build_brand_header())
 
         self.workflow_tabs = QTabWidget()
         self.workflow_tabs.setObjectName("workflowTabs")
@@ -465,6 +657,28 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         self._build_menu()
 
+    def _build_brand_header(self) -> QFrame:
+        brand = QFrame()
+        brand.setObjectName("brandHeader")
+        brand.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        layout = QHBoxLayout(brand)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
+
+        logo = QLabel()
+        logo.setObjectName("brandLogo")
+        logo.setPixmap(app_icon().pixmap(38, 38))
+        name = QLabel(APP_TITLE)
+        name.setObjectName("brandName")
+        version = QLabel(f"Beta {APP_VERSION}")
+        version.setObjectName("brandVersion")
+
+        layout.addWidget(logo)
+        layout.addWidget(name)
+        layout.addWidget(version)
+        layout.addStretch(1)
+        return brand
+
     def _build_header(self) -> QGroupBox:
         self.session_box = QGroupBox("Session")
         self.session_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
@@ -474,8 +688,15 @@ class MainWindow(QMainWindow):
         drop_layout = QVBoxLayout(self.drop_frame)
         drop_layout.setContentsMargins(18, 18, 18, 18)
 
+        title_row = QHBoxLayout()
+        title_icon = QLabel()
+        title_icon.setPixmap(lucide_icon("waveform", "#5eead4").pixmap(28, 28))
+        title_icon.setObjectName("heroIcon")
         title = QLabel("Drop a WAV or FLAC premaster")
         title.setObjectName("heroTitle")
+        title_row.addWidget(title_icon)
+        title_row.addWidget(title)
+        title_row.addStretch(1)
         subtitle = QLabel(
             f"Classic path: choose a file, analyze it, then render candidates. Beta {APP_VERSION}."
         )
@@ -487,11 +708,12 @@ class MainWindow(QMainWindow):
         self.input_edit.textChanged.connect(self._update_actions)
         browse_button = QPushButton("Choose file")
         browse_button.setObjectName("secondaryAction")
+        set_lucide_icon(browse_button, "upload")
         browse_button.clicked.connect(self._browse_input_file)
         row.addWidget(self.input_edit, stretch=1)
         row.addWidget(browse_button)
 
-        drop_layout.addWidget(title)
+        drop_layout.addLayout(title_row)
         drop_layout.addWidget(subtitle)
         drop_layout.addLayout(row)
         layout.addWidget(self.drop_frame)
@@ -510,9 +732,11 @@ class MainWindow(QMainWindow):
         self.selected_source_label.setWordWrap(True)
         self.change_source_button = QPushButton("Change source")
         self.change_source_button.setObjectName("utilityAction")
+        set_lucide_icon(self.change_source_button, "refresh")
         self.change_source_button.clicked.connect(self._browse_input_file)
         self.analyze_button = QPushButton("Analyze source")
         self.analyze_button.setObjectName("stepAction")
+        set_lucide_icon(self.analyze_button, "activity", "#071111")
         self.analyze_button.clicked.connect(self._run_analyze)
         self.status_label = QLabel("Step 1: choose a source file to begin.")
         self.status_label.setWordWrap(True)
@@ -540,6 +764,7 @@ class MainWindow(QMainWindow):
         self.render_context_label.setWordWrap(True)
         self.source_review_button = QPushButton("Review source analysis")
         self.source_review_button.setObjectName("secondaryAction")
+        set_lucide_icon(self.source_review_button, "eye")
         self.source_review_button.clicked.connect(self._toggle_source_review)
         self.output_edit = QLineEdit(str(Path.cwd() / "renders"))
         self.config_edit = QLineEdit()
@@ -591,23 +816,32 @@ class MainWindow(QMainWindow):
         )
         self.max_loudness_checkbox.toggled.connect(self._update_actions)
         self.max_loudness_warning = QLabel(
-            "Check before export: kick attack, sub control, distortion, and hat fatigue."
+            "Before exporting, listen A/B and check kick attack, sub control, distortion, and hat fatigue."
         )
         self.max_loudness_warning.setObjectName("warningHint")
         self.max_loudness_warning.setWordWrap(True)
         self.max_loudness_warning.setVisible(False)
+        self.listen_check_button = QPushButton("Go to A/B check")
+        self.listen_check_button.setObjectName("secondaryAction")
+        set_lucide_icon(self.listen_check_button, "headphones")
+        self.listen_check_button.clicked.connect(lambda: self.workflow_tabs.setCurrentIndex(2))
+        self.listen_check_button.setVisible(False)
 
         output_button = QPushButton("Choose output")
         output_button.setObjectName("utilityAction")
+        set_lucide_icon(output_button, "folder-open")
         output_button.clicked.connect(self._browse_output_dir)
         config_button = QPushButton("Load config")
         config_button.setObjectName("utilityAction")
+        set_lucide_icon(config_button, "file-cog")
         config_button.clicked.connect(self._browse_config_file)
         template_button = QPushButton("Create template")
         template_button.setObjectName("utilityAction")
+        set_lucide_icon(template_button, "file-plus")
         template_button.clicked.connect(self._create_config_template)
         self.advanced_button = QPushButton("Show advanced options")
         self.advanced_button.setObjectName("secondaryAction")
+        set_lucide_icon(self.advanced_button, "settings")
         self.advanced_button.clicked.connect(self._toggle_advanced_options)
         self.advanced_options_visible = False
 
@@ -615,15 +849,18 @@ class MainWindow(QMainWindow):
         self.export_button = QPushButton("Export final")
         self.optimize_button.setObjectName("stepAction")
         self.export_button.setObjectName("primaryAction")
+        set_lucide_icon(self.optimize_button, "audio-lines", "#071111")
+        set_lucide_icon(self.export_button, "download", "#18181b")
         self.optimize_button.clicked.connect(self._run_optimize)
         self.export_button.clicked.connect(self._export_selected_candidate)
         self.render_status_label = QLabel("Ready to render candidate versions.")
         self.render_status_label.setObjectName("renderStatus")
         self.render_status_label.setWordWrap(True)
-        self.render_progress_bar = QProgressBar()
+        self.render_progress_bar = AnimatedProgressBar()
         self.render_progress_bar.setRange(0, 100)
         self.render_progress_bar.setValue(0)
         self.render_progress_bar.setVisible(False)
+        self.render_work_pulse = WorkPulse()
 
         self.mode_label = QLabel("Master goal")
         self.quick_target_label = QLabel("Quick target")
@@ -645,18 +882,20 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.target_hint_label, 3, 0, 1, 2)
         layout.addWidget(self.max_loudness_checkbox, 3, 2, 1, 2)
         layout.addWidget(self.max_loudness_warning, 4, 0, 1, 2)
-        layout.addWidget(self.strict_tp_checkbox, 4, 2, 1, 2)
-        layout.addWidget(self.output_label, 4, 0)
-        layout.addWidget(self.output_edit, 4, 1)
-        layout.addWidget(output_button, 4, 2, Qt.AlignmentFlag.AlignRight)
-        layout.addWidget(self.config_label, 5, 0)
-        layout.addWidget(self.config_edit, 5, 1)
-        layout.addWidget(config_button, 5, 2, Qt.AlignmentFlag.AlignRight)
-        layout.addWidget(template_button, 5, 3, Qt.AlignmentFlag.AlignRight)
-        layout.addWidget(self.advanced_button, 6, 0, 1, 4)
-        layout.addWidget(self.render_status_label, 7, 0, 1, 2)
-        layout.addWidget(self.render_progress_bar, 7, 2, 1, 2)
-        layout.addWidget(self.optimize_button, 8, 0, 1, 4)
+        layout.addWidget(self.listen_check_button, 4, 2, Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(self.strict_tp_checkbox, 4, 3)
+        layout.addWidget(self.output_label, 5, 0)
+        layout.addWidget(self.output_edit, 5, 1)
+        layout.addWidget(output_button, 5, 2, Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(self.config_label, 6, 0)
+        layout.addWidget(self.config_edit, 6, 1)
+        layout.addWidget(config_button, 6, 2, Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(template_button, 6, 3, Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(self.advanced_button, 7, 0, 1, 4)
+        layout.addWidget(self.render_status_label, 8, 0)
+        layout.addWidget(self.render_work_pulse, 8, 1, Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(self.render_progress_bar, 8, 2, 1, 2)
+        layout.addWidget(self.optimize_button, 9, 0, 1, 4)
 
         self.mastering_widgets = [
             self.render_context_label,
@@ -673,8 +912,10 @@ class MainWindow(QMainWindow):
             self.destination_combo,
             self.max_loudness_checkbox,
             self.max_loudness_warning,
+            self.listen_check_button,
             self.strict_tp_checkbox,
             self.render_status_label,
+            self.render_work_pulse,
             self.render_progress_bar,
             self.optimize_button,
         ]
@@ -687,6 +928,7 @@ class MainWindow(QMainWindow):
             config_button,
             template_button,
         ]
+        self.render_overlay = RenderBusyOverlay(self.render_box)
         return self.render_box
 
     def _build_source_analysis(self) -> QGroupBox:
@@ -732,6 +974,7 @@ class MainWindow(QMainWindow):
 
         self.source_details_button = QPushButton("Show waveform and diagnostics")
         self.source_details_button.setObjectName("secondaryAction")
+        set_lucide_icon(self.source_details_button, "waveform")
         self.source_details_button.clicked.connect(self._toggle_source_details)
         source_layout.addWidget(self.source_details_button)
 
@@ -766,9 +1009,11 @@ class MainWindow(QMainWindow):
         self.rating_spin.setRange(1, 5)
         self.rating_spin.setValue(3)
         self.listen_selected_button = QPushButton("Listen to selected version")
+        set_lucide_icon(self.listen_selected_button, "headphones")
         self.listen_selected_button.clicked.connect(lambda: self.workflow_tabs.setCurrentIndex(2))
         self.save_note_button = QPushButton("Save listening note")
         self.save_note_button.setObjectName("secondaryAction")
+        set_lucide_icon(self.save_note_button, "save")
         self.save_note_button.clicked.connect(self._save_listening_note)
         best_layout.addRow("Chosen version", self.best_labels["name"])
         best_layout.addRow("Score", self.best_labels["score"])
@@ -788,16 +1033,25 @@ class MainWindow(QMainWindow):
         self.play_source_button = QPushButton("Play source (A)")
         self.play_candidate_button = QPushButton("Play candidate (B)")
         self.stop_audio_button = QPushButton("Stop")
+        self.new_analysis_button = QPushButton("New analysis")
         self.play_source_button.setObjectName("secondaryAction")
         self.play_candidate_button.setObjectName("secondaryAction")
         self.stop_audio_button.setObjectName("secondaryAction")
+        self.new_analysis_button.setObjectName("primaryAction")
+        set_lucide_icon(self.play_source_button, "play")
+        set_lucide_icon(self.play_candidate_button, "headphones")
+        set_lucide_icon(self.stop_audio_button, "square")
+        set_lucide_icon(self.new_analysis_button, "refresh", "#18181b")
         self.play_source_button.clicked.connect(self._play_source)
         self.play_candidate_button.clicked.connect(self._play_selected_candidate)
         self.stop_audio_button.clicked.connect(self._stop_playback)
+        self.new_analysis_button.clicked.connect(self._start_new_analysis)
+        self.new_analysis_button.setVisible(False)
         listening_row.addWidget(self.play_source_button)
         listening_row.addWidget(self.play_candidate_button)
         listening_row.addWidget(self.stop_audio_button)
         listening_row.addWidget(self.export_button)
+        listening_row.addWidget(self.new_analysis_button)
 
         self.playback_label = QLabel("Step 5: select a candidate, then compare A and B.")
         self.playback_label.setWordWrap(True)
@@ -808,23 +1062,20 @@ class MainWindow(QMainWindow):
         self.before_after_panel = QFrame()
         self.before_after_panel.setObjectName("beforeAfterPanel")
         before_after_layout = QGridLayout(self.before_after_panel)
-        before_after_layout.setSpacing(10)
-        before_label = QLabel("AVANT")
-        before_label.setObjectName("comparisonColumnTitle")
-        after_label = QLabel("APRES")
-        after_label.setObjectName("comparisonColumnTitle")
-        before_after_layout.addWidget(before_label, 0, 0)
-        before_after_layout.addWidget(after_label, 0, 1)
-        self.metric_cards = {
-            "loudness": MetricCard("LUFS"),
-            "peak": MetricCard("True peak"),
-            "lra": MetricCard("Dynamics (LRA)"),
-            "score": MetricCard("Technical score"),
+        before_after_layout.setHorizontalSpacing(12)
+        before_after_layout.setVerticalSpacing(8)
+        for col, title in enumerate(["Metric", "Before", "After", "Change", "Verdict"]):
+            header = QLabel(title)
+            header.setObjectName("comparisonColumnTitle")
+            before_after_layout.addWidget(header, 0, col)
+        self.comparison_rows = {
+            "loudness": ComparisonRow("Loudness"),
+            "peak": ComparisonRow("True peak"),
+            "lra": ComparisonRow("Dynamics"),
+            "score": ComparisonRow("Score"),
         }
-        before_after_layout.addWidget(self.metric_cards["loudness"], 1, 0, 1, 2)
-        before_after_layout.addWidget(self.metric_cards["peak"], 2, 0, 1, 2)
-        before_after_layout.addWidget(self.metric_cards["lra"], 3, 0, 1, 2)
-        before_after_layout.addWidget(self.metric_cards["score"], 4, 0, 1, 2)
+        for row, comparison_row in enumerate(self.comparison_rows.values(), start=1):
+            before_after_layout.addWidget(comparison_row, row, 0, 1, 5)
         self._clear_before_after()
 
         self.history_table = QTableWidget(0, 5)
@@ -839,6 +1090,7 @@ class MainWindow(QMainWindow):
         self.history_table.setVisible(False)
         self.history_button = QPushButton("Show session history")
         self.history_button.setObjectName("secondaryAction")
+        set_lucide_icon(self.history_button, "history")
         self.history_button.clicked.connect(self._toggle_history)
 
         layout.addLayout(listening_row)
@@ -868,6 +1120,7 @@ class MainWindow(QMainWindow):
 
         self.details_button = QPushButton("Show scoring details")
         self.details_button.setObjectName("secondaryAction")
+        set_lucide_icon(self.details_button, "list")
         self.details_button.clicked.connect(self._toggle_candidate_details)
         self.details_panel = QPlainTextEdit()
         self.details_panel.setReadOnly(True)
@@ -901,47 +1154,69 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(
             """
             QWidget {
-                background: #09090b;
-                color: #fafafa;
+                background: #0b0b0f;
+                color: #f7f3ea;
                 font-size: 13px;
             }
             QMainWindow, QMenuBar, QMenu {
-                background: #09090b;
-                color: #e4e4e7;
+                background: #0b0b0f;
+                color: #e8dfd0;
             }
             QMenuBar {
-                border-bottom: 1px solid #18181b;
+                border-bottom: 1px solid #202026;
                 padding: 4px 6px;
             }
             QMenuBar::item:selected, QMenu::item:selected {
-                background: #18181b;
+                background: #17171d;
                 border-radius: 8px;
+            }
+            #brandHeader {
+                background: transparent;
+            }
+            #brandLogo {
+                background: transparent;
+            }
+            #brandName {
+                background: transparent;
+                color: #f7f3ea;
+                font-family: "Space Grotesk", "Segoe UI Variable Display", "Segoe UI", sans-serif;
+                font-size: 30px;
+                font-weight: 700;
+                letter-spacing: 0;
+            }
+            #brandVersion {
+                background: #17171d;
+                border: 1px solid #2b2b33;
+                border-radius: 8px;
+                color: #d7c6a1;
+                font-weight: 700;
+                padding: 5px 9px;
             }
             QTabWidget::pane {
                 border: 0;
                 padding-top: 14px;
             }
             QTabBar::tab {
-                background: #111113;
-                color: #a1a1aa;
-                border: 1px solid #27272a;
+                background: #121219;
+                color: #a6a0aa;
+                border: 1px solid #2b2b33;
                 border-radius: 12px;
                 margin-right: 10px;
                 padding: 12px 24px;
                 min-width: 136px;
             }
             QTabBar::tab:selected {
-                background: #14b8a6;
-                border-color: #2dd4bf;
-                color: #ffffff;
+                background: #0fb7a7;
+                border-color: #4de0d2;
+                color: #071111;
                 font-weight: 700;
             }
             QTabBar::tab:disabled {
                 color: #52525b;
             }
             QGroupBox {
-                background: #111113;
-                border: 1px solid #27272a;
+                background: #121219;
+                border: 1px solid #2b2b33;
                 border-radius: 12px;
                 margin-top: 20px;
                 padding: 24px 18px 18px 18px;
@@ -952,19 +1227,23 @@ class MainWindow(QMainWindow):
                 left: 16px;
                 top: 5px;
                 padding: 1px 10px;
-                color: #5eead4;
-                background: #09090b;
+                color: #63e6d8;
+                background: #0b0b0f;
                 border-radius: 999px;
             }
             #dropFrame {
-                border: 1px solid #2dd4bf;
+                border: 1px solid #4de0d2;
                 border-radius: 12px;
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #111113, stop:1 #16201f);
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #121219, stop:1 #14201f);
             }
             #heroTitle {
                 font-size: 24px;
                 font-weight: 700;
-                color: #ffffff;
+                color: #f7f3ea;
+                font-family: "Space Grotesk", "Segoe UI Variable Display", "Segoe UI", sans-serif;
+            }
+            #heroIcon {
+                background: transparent;
             }
             #waveformPreview {
                 border: 1px solid #27272a;
@@ -1001,9 +1280,10 @@ class MainWindow(QMainWindow):
             #warningHint {
                 color: #facc15;
                 background: #18130a;
-                border: 1px solid #854d0e;
+                border: 0;
+                border-left: 3px solid #facc15;
                 border-radius: 8px;
-                padding: 8px 10px;
+                padding: 8px 12px;
             }
             #renderStatus {
                 color: #e4e4e7;
@@ -1011,6 +1291,11 @@ class MainWindow(QMainWindow):
                 border: 1px solid #18181b;
                 border-radius: 8px;
                 padding: 8px 10px;
+            }
+            #workPulse {
+                background: #09090b;
+                border: 1px solid #2b2b33;
+                border-radius: 8px;
             }
             #storyLabel {
                 color: #e4e4e7;
@@ -1030,45 +1315,45 @@ class MainWindow(QMainWindow):
                 background: #0f0f11;
                 padding: 10px;
             }
-            #metricCard {
+            #comparisonRow {
                 border: 1px solid #27272a;
                 border-radius: 12px;
                 background: #18181b;
-                padding: 12px;
+                padding: 10px;
             }
-            #metricTitle {
+            #comparisonMetric {
                 color: #5eead4;
                 font-weight: 700;
             }
             #comparisonColumnTitle {
-                color: #d4d4d8;
+                color: #a1a1aa;
                 font-weight: 700;
                 padding: 4px 8px;
             }
-            #metricBefore, #metricAfter {
+            #comparisonValue {
                 background: #09090b;
                 border-radius: 8px;
                 padding: 8px;
-                font-size: 15px;
+                font-size: 14px;
                 font-weight: 700;
             }
-            #metricDelta {
+            #comparisonChange {
                 color: #facc15;
-                font-size: 18px;
+                background: #09090b;
+                border-radius: 8px;
+                padding: 8px;
+                font-size: 14px;
                 font-weight: 700;
             }
-            #metricHint {
+            #comparisonChange[tone="good"] {
+                color: #5eead4;
+            }
+            #comparisonChange[tone="warn"] {
+                color: #facc15;
+            }
+            #comparisonVerdict {
                 color: #d4d4d8;
-            }
-            #deltaBar {
-                min-height: 8px;
-                max-height: 8px;
-                border-radius: 4px;
-                text-align: center;
-            }
-            #deltaBar::chunk {
-                background: #facc15;
-                border-radius: 4px;
+                padding: 6px 0;
             }
             QPushButton {
                 background: #14b8a6;
@@ -1298,6 +1583,7 @@ class MainWindow(QMainWindow):
             self.current_analysis = None
             self.current_session = None
             self._clear_results()
+            self.new_analysis_button.setVisible(False)
             self.source_details_panel.setVisible(False)
             self.source_details_button.setText("Show waveform and diagnostics")
             self.source_box.setVisible(False)
@@ -1376,7 +1662,11 @@ class MainWindow(QMainWindow):
             self.source_review_button.setText("Review source analysis")
             self.render_progress_bar.setValue(0)
             self.render_progress_bar.setVisible(True)
+            self.render_progress_bar.start_animation()
+            self.render_work_pulse.start()
             self.render_status_label.setText("Preparing render...")
+            self._position_render_overlay()
+            self.render_overlay.start("Creating versions...")
         else:
             self.progress_bar.setValue(0)
             self.progress_bar.setVisible(True)
@@ -1408,7 +1698,10 @@ class MainWindow(QMainWindow):
         self._active_worker_kind = None
         self._set_busy(False)
         if finished_kind == "optimize":
+            self.render_progress_bar.stop_animation()
+            self.render_work_pulse.stop()
             self.render_progress_bar.setVisible(False)
+            self.render_overlay.stop()
         else:
             self.progress_bar.setVisible(False)
         self._update_actions()
@@ -1416,8 +1709,9 @@ class MainWindow(QMainWindow):
     def _on_progress(self, message: str, percent: int) -> None:
         message = self._display_progress_message(message)
         if self._active_worker_kind == "optimize":
-            self.render_status_label.setText(message)
+            self.render_status_label.setText(self._animated_status_text(message))
             self.render_progress_bar.setValue(percent)
+            self.render_overlay.set_message(message)
             return
         self.status_label.setText(message)
         self.progress_bar.setValue(percent)
@@ -1462,8 +1756,11 @@ class MainWindow(QMainWindow):
 
     def _on_worker_failed(self, message: str) -> None:
         if self._active_worker_kind == "optimize":
+            self.render_progress_bar.stop_animation()
+            self.render_work_pulse.stop()
             self.render_status_label.setText("Render failed. Check the error dialog for details.")
             self.render_progress_bar.setValue(0)
+            self.render_overlay.set_message("Render failed")
         else:
             self.status_label.setText("Task failed. Check the error dialog for details.")
             self.progress_bar.setValue(0)
@@ -1553,7 +1850,7 @@ class MainWindow(QMainWindow):
         lines = [
             f"Selected: {self._candidate_version_label(selected)}",
             f"Role: {self._candidate_choice_label(selected)}",
-            f"Use it when: {self._human_preset_description(selected.preset.name, selected.preset.description)}",
+            f"Use it when: {self._human_preset_description(selected.preset.name, getattr(selected.preset, 'description', ''))}",
             f"Output: {selected.output_path}",
             f"Score: {selected.score:.1f}",
             (
@@ -1585,7 +1882,7 @@ class MainWindow(QMainWindow):
         self.details_panel.setPlainText("\n".join(lines))
         self._populate_before_after(selected)
         self.status_label.setText("Step 4 complete. Step 5: listen A/B, then step 6: export.")
-        if self.current_session and self.current_session.best_candidate is selected:
+        if self.current_session and getattr(self.current_session, "best_candidate", None) is selected:
             self._populate_best_candidate(selected)
         self._update_actions()
 
@@ -1658,6 +1955,10 @@ class MainWindow(QMainWindow):
                 return f"{prefix}{self._human_preset_name(preset_name)}"
         return message
 
+    def _animated_status_text(self, message: str) -> str:
+        dots = "." * ((self.render_progress_bar._phase // 250) % 4)
+        return f"{message}{dots}"
+
     def _candidate_rank(self, candidate: CandidateResult) -> int | None:
         if self.current_session is None:
             return None
@@ -1667,10 +1968,10 @@ class MainWindow(QMainWindow):
         return None
 
     def _clear_before_after(self) -> None:
-        self.metric_cards["loudness"].set_values("--", "--", "--", 0, "Select a version to see loudness change.")
-        self.metric_cards["peak"].set_values("--", "--", "--", 0, "Peak safety appears here.")
-        self.metric_cards["lra"].set_values("--", "--", "--", 0, "Dynamics change appears here.")
-        self.metric_cards["score"].set_values("--", "--", "--", 0, "OptiMaster decision score appears here.")
+        self.comparison_rows["loudness"].set_values("--", "--", "--", "Select a version to compare loudness.", None)
+        self.comparison_rows["peak"].set_values("--", "--", "--", "Peak safety appears here.", None)
+        self.comparison_rows["lra"].set_values("--", "--", "--", "Dynamics change appears here.", None)
+        self.comparison_rows["score"].set_values("--", "--", "--", "Technical score appears here.", None)
 
     def _populate_before_after(self, candidate: CandidateResult) -> None:
         source = candidate.source_metrics
@@ -1679,33 +1980,33 @@ class MainWindow(QMainWindow):
         peak_delta = output.true_peak_dbtp - source.true_peak_dbtp
         lra_delta = output.lra_lu - source.lra_lu
 
-        self.metric_cards["loudness"].set_values(
+        self.comparison_rows["loudness"].set_values(
             format_metric(source.integrated_lufs, "LUFS"),
             format_metric(output.integrated_lufs, "LUFS"),
             f"{loudness_delta:+.1f} LUFS",
-            self._delta_magnitude(loudness_delta, 6.0),
             "Louder" if loudness_delta > 0 else "Quieter" if loudness_delta < 0 else "Same loudness",
+            abs(loudness_delta) <= 3.0,
         )
-        self.metric_cards["peak"].set_values(
+        self.comparison_rows["peak"].set_values(
             format_metric(source.true_peak_dbtp, "dBTP"),
             format_metric(output.true_peak_dbtp, "dBTP"),
             f"{peak_delta:+.1f} dB",
-            self._delta_magnitude(peak_delta, 4.0),
             "More headroom" if peak_delta < 0 else "Hotter peak" if peak_delta > 0 else "Same peak",
+            output.true_peak_dbtp <= -1.0,
         )
-        self.metric_cards["lra"].set_values(
+        self.comparison_rows["lra"].set_values(
             format_metric(source.lra_lu, "LU"),
             format_metric(output.lra_lu, "LU"),
             f"{lra_delta:+.1f} LU",
-            self._delta_magnitude(lra_delta, 4.0),
             "More dynamic" if lra_delta > 0 else "Tighter" if lra_delta < 0 else "Dynamics preserved",
+            lra_delta >= -2.0,
         )
-        self.metric_cards["score"].set_values(
+        self.comparison_rows["score"].set_values(
             "--",
             f"{candidate.score:.1f}",
             "Best compromise" if self._candidate_rank(candidate) == 1 else "Alternative",
-            int(round(candidate.score)),
             "Technical compromise between loudness, safety, and dynamics.",
+            candidate.score >= 70,
         )
 
     def _delta_magnitude(self, delta: float, full_scale: float) -> int:
@@ -1715,6 +2016,12 @@ class MainWindow(QMainWindow):
         candidate = self._selected_candidate()
         if candidate is None:
             self._show_error("Select a rendered candidate before exporting.")
+            return
+        if not self._candidate_in_current_session(candidate):
+            self._show_error("This candidate is no longer part of the current session. Create versions again.")
+            return
+        if not candidate.output_path.exists():
+            self._show_error(f"Cannot export missing rendered file:\n{candidate.output_path}")
             return
 
         destination, _ = QFileDialog.getSaveFileName(
@@ -1726,11 +2033,26 @@ class MainWindow(QMainWindow):
         if not destination:
             return
 
-        shutil.copy2(candidate.output_path, destination)
+        try:
+            shutil.copy2(candidate.output_path, destination)
+        except OSError as exc:
+            self._show_error(f"Export failed:\n{exc}")
+            return
+
         QMessageBox.information(
             self,
             "Export complete",
             f"Copied {self._candidate_version_label(candidate)} to:\n{destination}",
+        )
+        self.playback_label.setText("Export complete. Start a new analysis when you are ready.")
+        self.new_analysis_button.setVisible(True)
+        self.new_analysis_button.setEnabled(True)
+        self._schedule_window_fit()
+
+    def _candidate_in_current_session(self, candidate: CandidateResult) -> bool:
+        return bool(
+            self.current_session
+            and any(session_candidate is candidate for session_candidate in self.current_session.candidates)
         )
 
     def _default_export_path(self, candidate: CandidateResult) -> Path:
@@ -1755,6 +2077,46 @@ class MainWindow(QMainWindow):
         service = EngineService(config=config, preference_path=preferences_path)
         service.add_listening_note(candidate.preset.name, self.rating_spin.value())
         self.status_label.setText(f"Saved note for {self._candidate_version_label(candidate)} in {preferences_path}")
+
+    def _start_new_analysis(self) -> None:
+        self._stop_playback()
+        self.current_analysis = None
+        self.current_session = None
+        self.current_output_dir = None
+        self.waveform_preview_path = None
+        self.input_edit.clear()
+        self.output_edit.setText(str(Path.cwd() / "renders"))
+        self.config_edit.clear()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setVisible(False)
+        self.render_progress_bar.stop_animation()
+        self.render_work_pulse.stop()
+        self.render_progress_bar.setValue(0)
+        self.render_progress_bar.setVisible(False)
+        self.render_status_label.setText("Ready to render candidate versions.")
+        self.render_overlay.stop()
+        self.status_label.setText("Choose a source file to begin.")
+        self.source_box.setVisible(False)
+        self.source_details_panel.setVisible(False)
+        self.source_details_button.setText("Show waveform and diagnostics")
+        self.source_review_button.setText("Review source analysis")
+        self.metric_labels["profile"].setText("Not analyzed")
+        self.metric_labels["integrated"].setText("--")
+        self.metric_labels["true_peak"].setText("--")
+        self.metric_labels["lra"].setText("--")
+        self.metric_labels["diagnostics"].setText("Analyze a source to see diagnostics.")
+        self.waveform_label.setPixmap(QPixmap())
+        self.waveform_label.setText("Waveform preview appears after file selection.")
+        self.results_table.setRowCount(0)
+        self.details_panel.clear()
+        self.details_panel.setVisible(False)
+        self.details_button.setText("Show scoring details")
+        self._clear_before_after()
+        self._populate_best_candidate(None)
+        self.new_analysis_button.setVisible(False)
+        self.workflow_tabs.setCurrentIndex(0)
+        self._update_actions()
 
     def _update_waveform_preview(self, source_path: Path) -> None:
         self.waveform_label.setPixmap(QPixmap())
@@ -1907,25 +2269,21 @@ class MainWindow(QMainWindow):
         self.playback_label.setText("Playback stopped.")
 
     def _set_busy(self, busy: bool) -> None:
-        self.analyze_button.setDisabled(busy)
-        self.optimize_button.setDisabled(busy)
-        self.export_button.setDisabled(busy or self._selected_candidate() is None)
-        self.play_source_button.setDisabled(busy)
-        self.play_candidate_button.setDisabled(busy or self._selected_candidate() is None)
-        self.listen_selected_button.setDisabled(busy or self._selected_candidate() is None)
-        self.save_note_button.setDisabled(busy or self._selected_candidate() is None)
-        self.mode_combo.setDisabled(busy)
-        self.destination_combo.setDisabled(busy)
-        self.strict_tp_checkbox.setDisabled(busy)
-        self.quick_target_combo.setDisabled(busy)
-        self.target_lufs_spin.setDisabled(busy)
-        self.max_loudness_checkbox.setDisabled(busy)
-        self.advanced_button.setDisabled(busy)
-        self.change_source_button.setDisabled(busy)
-        self.source_review_button.setDisabled(busy)
-        self.input_edit.setDisabled(busy)
-        self.output_edit.setDisabled(busy)
-        self.config_edit.setDisabled(busy)
+        self.workflow_tabs.tabBar().setDisabled(busy)
+        for widget in [*self.mastering_widgets, *self.advanced_widgets]:
+            widget.setDisabled(busy)
+        for widget in [
+            self.analyze_button,
+            self.export_button,
+            self.new_analysis_button,
+            self.play_source_button,
+            self.play_candidate_button,
+            self.listen_selected_button,
+            self.save_note_button,
+            self.change_source_button,
+            self.input_edit,
+        ]:
+            widget.setDisabled(busy)
 
     def _update_actions(self) -> None:
         has_input = bool(self.input_edit.text().strip())
@@ -1945,6 +2303,7 @@ class MainWindow(QMainWindow):
         self.analyze_button.setText("Analyzed" if has_analysis else "Analyze source")
         self.optimize_button.setEnabled(has_analysis and self._thread is None)
         self.export_button.setEnabled(self._thread is None and has_candidate)
+        self.new_analysis_button.setEnabled(self._thread is None)
         self.play_candidate_button.setEnabled(self._thread is None and has_candidate)
         self.listen_selected_button.setEnabled(self._thread is None and has_candidate)
         self.save_note_button.setEnabled(self._thread is None and has_candidate)
@@ -1952,6 +2311,8 @@ class MainWindow(QMainWindow):
         self.quick_target_combo.setEnabled(can_choose_target)
         self.target_lufs_spin.setEnabled(can_choose_target)
         self.max_loudness_warning.setVisible(has_analysis and self.max_loudness_checkbox.isChecked())
+        self.listen_check_button.setVisible(has_candidates and self.max_loudness_checkbox.isChecked())
+        self.listen_check_button.setEnabled(self._thread is None and has_candidate)
         self.workflow_tabs.setTabEnabled(0, True)
         self.workflow_tabs.setTabEnabled(1, has_candidates)
         self.workflow_tabs.setTabEnabled(2, has_candidate)
@@ -1978,12 +2339,43 @@ class MainWindow(QMainWindow):
         if self.isMaximized() or self.isFullScreen():
             return
 
-        current_step = self.workflow_tabs.currentWidget()
-        content_hint = current_step.sizeHint().height() if current_step is not None else self.centralWidget().sizeHint().height()
-        chrome_height = self.menuBar().sizeHint().height() + self.workflow_tabs.tabBar().sizeHint().height() + 120
-        target_height = max(560, min(content_hint + chrome_height, 860))
+        target_height = self._target_window_height()
         if abs(self.height() - target_height) > 28:
             self.resize(self.width(), target_height)
+
+    def _target_window_height(self) -> int:
+        current_index = self.workflow_tabs.currentIndex()
+        has_input = bool(self.input_edit.text().strip())
+        has_analysis = (
+            self.current_analysis is not None
+            and has_input
+            and self.current_analysis.source_path == Path(self.input_edit.text()).resolve()
+        )
+        if current_index == 0:
+            if not has_input:
+                return 460
+            if not has_analysis:
+                return 430
+            height = 590
+            if not self.source_box.isHidden():
+                height += 190
+            if not self.source_details_panel.isHidden():
+                height += 170
+            if self.advanced_options_visible:
+                height += 95
+            return min(height, 860)
+        if current_index == 1:
+            return 760 if self.details_panel.isVisible() else 640
+        return 760 if not self.history_table.isHidden() else 680
+
+    def resizeEvent(self, event: object) -> None:
+        super().resizeEvent(event)
+        self._position_render_overlay()
+
+    def _position_render_overlay(self) -> None:
+        if hasattr(self, "render_overlay"):
+            self.render_overlay.setGeometry(self.render_box.rect())
+            self.render_overlay.raise_()
 
     def _render_story_text(self) -> str:
         if self.current_analysis is None:
