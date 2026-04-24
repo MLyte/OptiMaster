@@ -149,10 +149,25 @@ def format_metric(value: float, unit: str) -> str:
     return f"{value:.1f} {unit}"
 
 
+def app_asset_path(filename: str):
+    try:
+        return resources.files("optimaster.assets").joinpath(filename)
+    except ModuleNotFoundError:
+        frozen_root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+        candidates = [
+            frozen_root / "optimaster" / "assets" / filename,
+            Path(__file__).resolve().parent / "assets" / filename,
+        ]
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
+        return candidates[0]
+
+
 def app_icon() -> QIcon:
-    icon_path = resources.files("optimaster.assets").joinpath(APP_ICON)
+    icon_path = app_asset_path(APP_ICON)
     if not icon_path.is_file():
-        icon_path = resources.files("optimaster.assets").joinpath(APP_ICON_FALLBACK)
+        icon_path = app_asset_path(APP_ICON_FALLBACK)
     return QIcon(str(icon_path))
 
 

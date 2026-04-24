@@ -1,0 +1,1 @@
+"""Bundled OptiMaster GUI assets."""

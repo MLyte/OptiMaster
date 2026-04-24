@@ -254,7 +254,7 @@ Packaging is still beta. The current Windows packaging direction is documented i
 The intended release build uses PyInstaller with the bundled OptiMaster icon and the GUI entrypoint. Do not build from `src/optimaster/__main__.py`; that is the CLI entrypoint.
 
 ```powershell
-pyinstaller --noconfirm --windowed --name OptiMaster --icon src/optimaster/assets/optimaster_icon.ico --collect-all PySide6 src/optimaster/gui.py
+pyinstaller --noconfirm --windowed --name OptiMaster --icon src/optimaster/assets/optimaster_icon.ico --collect-all PySide6 --hidden-import optimaster.assets --collect-data optimaster --add-data "src/optimaster/assets;optimaster/assets" src/optimaster/gui.py
 ```
 
 ## Testing

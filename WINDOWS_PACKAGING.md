@@ -36,10 +36,11 @@ python -m pip install pyinstaller
 Build the GUI executable:
 
 ```powershell
-pyinstaller --noconfirm --windowed --name OptiMaster --icon src/optimaster/assets/optimaster_icon.ico --collect-all PySide6 src/optimaster/gui.py
+pyinstaller --noconfirm --windowed --name OptiMaster --icon src/optimaster/assets/optimaster_icon.ico --collect-all PySide6 --hidden-import optimaster.assets --collect-data optimaster --add-data "src/optimaster/assets;optimaster/assets" src/optimaster/gui.py
 ```
 
 Important: `src/optimaster/__main__.py` launches the CLI. The Windows GUI executable must build from `src/optimaster/gui.py`.
+The `optimaster/assets` data must be bundled too, otherwise the frozen app cannot load its icon at startup.
 
 ## Release Checklist
 

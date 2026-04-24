@@ -42,7 +42,17 @@ jobs:
       - name: Build OptiMaster GUI
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --windowed --name OptiMaster --icon src/optimaster/assets/optimaster_icon.ico --collect-all PySide6 src/optimaster/gui.py
+          pyinstaller --noconfirm --windowed --name OptiMaster --icon src/optimaster/assets/optimaster_icon.ico --collect-all PySide6 --hidden-import optimaster.assets --collect-data optimaster --add-data "src/optimaster/assets;optimaster/assets" src/optimaster/gui.py
+
+      - name: Verify frozen app layout
+        shell: pwsh
+        run: |
+          if (!(Test-Path "dist/OptiMaster/OptiMaster.exe")) {
+            throw "OptiMaster.exe is missing from the portable build."
+          }
+          if (!(Test-Path "dist/OptiMaster/_internal/optimaster/assets/optimaster_icon.ico")) {
+            throw "Bundled OptiMaster assets are missing from the portable build."
+          }
 
       - name: Package portable archive
         shell: pwsh
