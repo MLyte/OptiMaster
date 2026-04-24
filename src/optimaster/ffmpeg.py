@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import re
 import subprocess
+import time
 from pathlib import Path
+from typing import Callable
 
 from optimaster.errors import (
     FfmpegExecutionError,
     FfmpegNotAvailableError,
     InputFileError,
     LoudnessParseError,
+    OperationCancelledError,
 )
 from optimaster.models import LoudnessMetrics
 
@@ -21,6 +24,7 @@ SUMMARY_RE = {
 }
 
 SUPPORTED_EXTENSIONS = {".wav", ".flac"}
+CancelCallback = Callable[[], bool]
 
 
 def _subprocess_window_options() -> dict[str, object]:
@@ -36,14 +40,36 @@ def _subprocess_window_options() -> dict[str, object]:
     }
 
 
-def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+def _run(cmd: list[str], cancel_callback: CancelCallback | None = None) -> subprocess.CompletedProcess[str]:
+    if cancel_callback is None:
+        return subprocess.run(
+            cmd,
+            text=True,
+            capture_output=True,
+            check=False,
+            **_subprocess_window_options(),
+        )
+
+    process = subprocess.Popen(
         cmd,
         text=True,
-        capture_output=True,
-        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         **_subprocess_window_options(),
     )
+    while process.poll() is None:
+        if cancel_callback():
+            process.terminate()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=2)
+            stdout, stderr = process.communicate()
+            raise OperationCancelledError(details=(stderr or stdout or "").strip() or None)
+        time.sleep(0.1)
+    stdout, stderr = process.communicate()
+    return subprocess.CompletedProcess(cmd, process.returncode, stdout, stderr)
 
 
 def validate_input_file(file_path: str | Path) -> Path:
@@ -64,7 +90,11 @@ def assert_ffmpeg_available(ffmpeg_binary: str) -> None:
         raise FfmpegNotAvailableError(details=(result.stderr or result.stdout).strip())
 
 
-def analyze_loudness(file_path: str | Path, ffmpeg_binary: str = "ffmpeg") -> LoudnessMetrics:
+def analyze_loudness(
+    file_path: str | Path,
+    ffmpeg_binary: str = "ffmpeg",
+    cancel_callback: CancelCallback | None = None,
+) -> LoudnessMetrics:
     path = validate_input_file(file_path)
     cmd = [
         ffmpeg_binary,
@@ -78,7 +108,7 @@ def analyze_loudness(file_path: str | Path, ffmpeg_binary: str = "ffmpeg") -> Lo
         "null",
         "NUL" if path.drive else "/dev/null",
     ]
-    result = _run(cmd)
+    result = _run(cmd, cancel_callback=cancel_callback)
     text = f"{result.stdout}\n{result.stderr}"
     if result.returncode != 0:
         raise FfmpegExecutionError(message="FFmpeg analysis failed", details=text.strip())
@@ -102,6 +132,7 @@ def render_candidate(
     output_path: str | Path,
     ffmpeg_filter: str,
     ffmpeg_binary: str = "ffmpeg",
+    cancel_callback: CancelCallback | None = None,
 ) -> None:
     input_validated = validate_input_file(input_path)
     cmd = [
@@ -114,7 +145,7 @@ def render_candidate(
         ffmpeg_filter,
         str(output_path),
     ]
-    result = _run(cmd)
+    result = _run(cmd, cancel_callback=cancel_callback)
     if result.returncode != 0:
         raise FfmpegExecutionError(message="FFmpeg render failed", details=(result.stderr or result.stdout).strip())
 

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Callable
 
 from optimaster.config import AppConfig
+from optimaster.errors import OperationCancelledError
 from optimaster.ffmpeg import analyze_loudness, assert_ffmpeg_available, render_candidate, validate_input_file
 from optimaster.models import (
     CandidatePreset,
@@ -30,6 +31,7 @@ PROFILE_MAP = {
 }
 
 ProgressCallback = Callable[[str, int], None]
+CancelCallback = Callable[[], bool]
 
 
 DESTINATION_SCORING_OVERRIDES = {
@@ -67,13 +69,22 @@ class EngineService:
         self,
         input_file: str | Path,
         progress_callback: ProgressCallback | None = None,
+        cancel_callback: CancelCallback | None = None,
     ) -> SourceAnalysis:
+        self._raise_if_cancelled(cancel_callback)
         self._notify(progress_callback, "Validating input file", 5)
         input_path = validate_input_file(input_file)
+        self._raise_if_cancelled(cancel_callback)
         self._notify(progress_callback, "Checking FFmpeg availability", 15)
         self._ensure_ffmpeg_available()
+        self._raise_if_cancelled(cancel_callback)
         self._notify(progress_callback, "Analyzing source loudness", 35)
-        source_metrics = analyze_loudness(input_path, ffmpeg_binary=self.config.ffmpeg_binary)
+        source_metrics = analyze_loudness(
+            input_path,
+            ffmpeg_binary=self.config.ffmpeg_binary,
+            cancel_callback=cancel_callback,
+        )
+        self._raise_if_cancelled(cancel_callback)
         profile_str, diagnostics = classify_source(source_metrics)
         profile = PROFILE_MAP.get(profile_str, SourceProfile.TOUCH_MINIMALLY)
         self._notify(progress_callback, "Source analysis ready", 100)
@@ -101,7 +112,9 @@ class EngineService:
         target_lufs: float | None = None,
         maximize_loudness: bool = False,
         progress_callback: ProgressCallback | None = None,
+        cancel_callback: CancelCallback | None = None,
     ) -> OptimizationSession:
+        self._raise_if_cancelled(cancel_callback)
         selected_mode = mode or self.config.default_mode
         scoring_cfg = self._target_scoring_config(
             self._runtime_scoring_config(destination_profile, strict_true_peak, target_lufs),
@@ -113,14 +126,20 @@ class EngineService:
 
         self._notify(progress_callback, "Starting optimization session", 0)
         input_path = validate_input_file(input_file)
+        self._raise_if_cancelled(cancel_callback)
         analysis = source_analysis
         if analysis is not None and analysis.source_path != input_path:
             analysis = None
 
         if analysis is None:
-            analysis = self.analyze_source(input_path, progress_callback=progress_callback)
+            analysis = self.analyze_source(
+                input_path,
+                progress_callback=progress_callback,
+                cancel_callback=cancel_callback,
+            )
         else:
             self._notify(progress_callback, "Reusing existing source analysis", 40)
+        self._raise_if_cancelled(cancel_callback)
 
         presets = select_presets_for_profile(
             profile=analysis.profile,
@@ -136,6 +155,7 @@ class EngineService:
         results: list[CandidateResult] = []
         total_jobs = max(len(render_jobs), 1)
         for idx, (preset, render_target_lufs, job_scoring_cfg) in enumerate(render_jobs, start=1):
+            self._raise_if_cancelled(cancel_callback)
             render_progress = 45 + int(((idx - 1) / total_jobs) * 40)
             analyze_progress = 55 + int(((idx - 1) / total_jobs) * 40)
             score_progress = 65 + int(((idx - 1) / total_jobs) * 35)
@@ -146,9 +166,16 @@ class EngineService:
                 output_path=output_path,
                 ffmpeg_filter=self._render_filter(preset.ffmpeg_filter, job_scoring_cfg, render_target_lufs),
                 ffmpeg_binary=self.config.ffmpeg_binary,
+                cancel_callback=cancel_callback,
             )
+            self._raise_if_cancelled(cancel_callback)
             self._notify(progress_callback, f"Measuring {preset.name}", analyze_progress)
-            output_metrics = analyze_loudness(output_path, ffmpeg_binary=self.config.ffmpeg_binary)
+            output_metrics = analyze_loudness(
+                output_path,
+                ffmpeg_binary=self.config.ffmpeg_binary,
+                cancel_callback=cancel_callback,
+            )
+            self._raise_if_cancelled(cancel_callback)
             self._notify(progress_callback, f"Scoring {preset.name}", score_progress)
             score, reasons = score_candidate(
                 metrics=output_metrics,
@@ -181,6 +208,7 @@ class EngineService:
             )
 
         results.sort(key=lambda item: item.score, reverse=True)
+        self._raise_if_cancelled(cancel_callback)
         self._notify(progress_callback, "Writing session exports", 92)
         session = OptimizationSession(
             session_id=datetime.now(UTC).strftime("session-%Y%m%d-%H%M%S"),
@@ -321,3 +349,8 @@ class EngineService:
     def _notify(progress_callback: ProgressCallback | None, message: str, percent: int) -> None:
         if progress_callback is not None:
             progress_callback(message, max(0, min(percent, 100)))
+
+    @staticmethod
+    def _raise_if_cancelled(cancel_callback: CancelCallback | None) -> None:
+        if cancel_callback is not None and cancel_callback():
+            raise OperationCancelledError()

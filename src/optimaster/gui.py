@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import shutil
 import sys
+import threading
+import time
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QRectF, QSize, QThread, QTimer, Qt, QUrl, Signal
-from PySide6.QtGui import QAction, QColor, QDragEnterEvent, QDropEvent, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtGui import QAction, QColor, QDesktopServices, QDragEnterEvent, QDropEvent, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication,
@@ -50,6 +52,10 @@ APP_TITLE = "OptiMaster"
 APP_VERSION = "2026.4.24"
 APP_ICON = "optimaster_icon.ico"
 APP_ICON_FALLBACK = "optimaster_icon.svg"
+BRAND_ACCENT = "#e5b94d"
+CTA_ICON_COLOR = "#071111"
+PRIMARY_ICON_COLOR = "#18181b"
+SUPPORT_ICON_COLOR = BRAND_ACCENT
 SUPPORTED_EXTENSIONS = {".wav", ".flac"}
 PRESET_DISPLAY_NAMES = {
     "do_almost_nothing": "Light polish",
@@ -150,7 +156,7 @@ def app_icon() -> QIcon:
     return QIcon(str(icon_path))
 
 
-def lucide_icon(name: str, color: str = "#f4f4f5") -> QIcon:
+def lucide_icon(name: str, color: str = SUPPORT_ICON_COLOR) -> QIcon:
     path = LUCIDE_ICON_PATHS[name]
     svg = (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
@@ -162,7 +168,7 @@ def lucide_icon(name: str, color: str = "#f4f4f5") -> QIcon:
     return QIcon(pixmap)
 
 
-def set_lucide_icon(button: QPushButton, name: str, color: str = "#f4f4f5") -> None:
+def set_lucide_icon(button: QPushButton, name: str, color: str = SUPPORT_ICON_COLOR) -> None:
     button.setIcon(lucide_icon(name, color))
     button.setIconSize(QSize(17, 17))
 
@@ -219,6 +225,10 @@ class EngineWorker(QObject):
     def __init__(self, request: WorkerRequest) -> None:
         super().__init__()
         self.request = request
+        self._cancelled = threading.Event()
+
+    def cancel(self) -> None:
+        self._cancelled.set()
 
     def run(self) -> None:
         try:
@@ -228,6 +238,7 @@ class EngineWorker(QObject):
                 result = service.analyze_source(
                     self.request.input_file,
                     progress_callback=self._emit_progress,
+                    cancel_callback=self._cancelled.is_set,
                 )
             else:
                 result = service.optimize(
@@ -240,6 +251,7 @@ class EngineWorker(QObject):
                     target_lufs=self.request.target_lufs,
                     maximize_loudness=self.request.maximize_loudness,
                     progress_callback=self._emit_progress,
+                    cancel_callback=self._cancelled.is_set,
                 )
             self.finished.emit(result)
         except AppError as exc:
@@ -464,8 +476,8 @@ class RenderBusyOverlay(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.fillRect(self.rect(), QColor(9, 9, 11, 52))
 
-        panel_width = min(360, max(260, self.width() - 120))
-        panel_height = 88
+        panel_width = min(560, max(360, self.width() - 120))
+        panel_height = 104
         panel = QRectF(
             (self.width() - panel_width) / 2,
             (self.height() - panel_height) / 2,
@@ -476,15 +488,19 @@ class RenderBusyOverlay(QWidget):
         painter.setBrush(QColor("#111113"))
         painter.drawRoundedRect(panel, 12, 12)
 
-        spinner = QRectF(panel.left() + 24, panel.top() + 25, 38, 38)
+        spinner = QRectF(panel.left() + 24, panel.top() + 33, 38, 38)
         painter.setPen(QPen(QColor("#27272a"), 4))
         painter.drawArc(spinner, 0, 360 * 16)
         painter.setPen(QPen(QColor("#2dd4bf"), 4))
         painter.drawArc(spinner, -self._phase * 16, 110 * 16)
 
-        text_rect = panel.adjusted(78, 18, -18, -18)
+        text_rect = panel.adjusted(78, 18, -22, -18)
         painter.setPen(QColor("#fafafa"))
-        painter.drawText(text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self._message)
+        painter.drawText(
+            text_rect,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter | Qt.TextFlag.TextWordWrap,
+            self._message,
+        )
 
 
 class AnimatedProgressBar(QProgressBar):
@@ -584,8 +600,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle(APP_TITLE)
         self.setWindowIcon(app_icon())
-        self.resize(1180, 460)
-        self.setMinimumSize(980, 420)
+        self.resize(1240, 760)
+        self.setMinimumSize(1080, 640)
 
         self.current_analysis: SourceAnalysis | None = None
         self.current_session: OptimizationSession | None = None
@@ -607,6 +623,7 @@ class MainWindow(QMainWindow):
         self.audio_output = QAudioOutput(self)
         self.audio_player.setAudioOutput(self.audio_output)
         self.current_playback: str | None = None
+        self._progress_started_at: float | None = None
 
         self._build_ui()
         self._apply_styles()
@@ -690,7 +707,7 @@ class MainWindow(QMainWindow):
 
         title_row = QHBoxLayout()
         title_icon = QLabel()
-        title_icon.setPixmap(lucide_icon("waveform", "#5eead4").pixmap(28, 28))
+        title_icon.setPixmap(lucide_icon("waveform", BRAND_ACCENT).pixmap(28, 28))
         title_icon.setObjectName("heroIcon")
         title = QLabel("Drop a WAV or FLAC premaster")
         title.setObjectName("heroTitle")
@@ -736,7 +753,7 @@ class MainWindow(QMainWindow):
         self.change_source_button.clicked.connect(self._browse_input_file)
         self.analyze_button = QPushButton("Analyze source")
         self.analyze_button.setObjectName("stepAction")
-        set_lucide_icon(self.analyze_button, "activity", "#071111")
+        set_lucide_icon(self.analyze_button, "activity", CTA_ICON_COLOR)
         self.analyze_button.clicked.connect(self._run_analyze)
         self.status_label = QLabel("Step 1: choose a source file to begin.")
         self.status_label.setWordWrap(True)
@@ -811,6 +828,7 @@ class MainWindow(QMainWindow):
         target_lufs_layout.addWidget(self.target_lufs_spin, stretch=1)
         target_lufs_layout.addWidget(self.target_lufs_unit)
         self.max_loudness_checkbox = QCheckBox("Find the loudest clean version")
+        self.max_loudness_checkbox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         self.max_loudness_checkbox.setToolTip(
             "Try several louder LUFS targets and rank the best loud/safe compromise."
         )
@@ -823,9 +841,14 @@ class MainWindow(QMainWindow):
         self.max_loudness_warning.setVisible(False)
         self.listen_check_button = QPushButton("Go to A/B check")
         self.listen_check_button.setObjectName("secondaryAction")
+        self.listen_check_button.setMinimumWidth(220)
         set_lucide_icon(self.listen_check_button, "headphones")
         self.listen_check_button.clicked.connect(lambda: self.workflow_tabs.setCurrentIndex(2))
         self.listen_check_button.setVisible(False)
+        self.listen_check_hint = QLabel("A/B check unlocks after versions are created.")
+        self.listen_check_hint.setObjectName("statusHint")
+        self.listen_check_hint.setWordWrap(True)
+        self.listen_check_hint.setVisible(False)
 
         output_button = QPushButton("Choose output")
         output_button.setObjectName("utilityAction")
@@ -849,8 +872,8 @@ class MainWindow(QMainWindow):
         self.export_button = QPushButton("Export final")
         self.optimize_button.setObjectName("stepAction")
         self.export_button.setObjectName("primaryAction")
-        set_lucide_icon(self.optimize_button, "audio-lines", "#071111")
-        set_lucide_icon(self.export_button, "download", "#18181b")
+        set_lucide_icon(self.optimize_button, "audio-lines", CTA_ICON_COLOR)
+        set_lucide_icon(self.export_button, "download", PRIMARY_ICON_COLOR)
         self.optimize_button.clicked.connect(self._run_optimize)
         self.export_button.clicked.connect(self._export_selected_candidate)
         self.render_status_label = QLabel("Ready to render candidate versions.")
@@ -861,6 +884,12 @@ class MainWindow(QMainWindow):
         self.render_progress_bar.setValue(0)
         self.render_progress_bar.setVisible(False)
         self.render_work_pulse = WorkPulse()
+        self.cancel_render_button = QPushButton("Cancel")
+        self.cancel_render_button.setObjectName("secondaryAction")
+        self.cancel_render_button.setMinimumWidth(110)
+        set_lucide_icon(self.cancel_render_button, "square")
+        self.cancel_render_button.clicked.connect(self._cancel_active_worker)
+        self.cancel_render_button.setVisible(False)
 
         self.mode_label = QLabel("Master goal")
         self.quick_target_label = QLabel("Quick target")
@@ -879,23 +908,25 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.destination_combo, 2, 1)
         layout.addWidget(self.target_lufs_label, 2, 2)
         layout.addWidget(target_lufs_field, 2, 3)
-        layout.addWidget(self.target_hint_label, 3, 0, 1, 2)
-        layout.addWidget(self.max_loudness_checkbox, 3, 2, 1, 2)
-        layout.addWidget(self.max_loudness_warning, 4, 0, 1, 2)
-        layout.addWidget(self.listen_check_button, 4, 2, Qt.AlignmentFlag.AlignLeft)
-        layout.addWidget(self.strict_tp_checkbox, 4, 3)
-        layout.addWidget(self.output_label, 5, 0)
-        layout.addWidget(self.output_edit, 5, 1)
-        layout.addWidget(output_button, 5, 2, Qt.AlignmentFlag.AlignRight)
-        layout.addWidget(self.config_label, 6, 0)
-        layout.addWidget(self.config_edit, 6, 1)
-        layout.addWidget(config_button, 6, 2, Qt.AlignmentFlag.AlignRight)
-        layout.addWidget(template_button, 6, 3, Qt.AlignmentFlag.AlignRight)
-        layout.addWidget(self.advanced_button, 7, 0, 1, 4)
-        layout.addWidget(self.render_status_label, 8, 0)
-        layout.addWidget(self.render_work_pulse, 8, 1, Qt.AlignmentFlag.AlignLeft)
-        layout.addWidget(self.render_progress_bar, 8, 2, 1, 2)
-        layout.addWidget(self.optimize_button, 9, 0, 1, 4)
+        layout.addWidget(self.target_hint_label, 3, 0, 1, 4)
+        layout.addWidget(self.max_loudness_checkbox, 4, 0, 1, 2)
+        layout.addWidget(self.strict_tp_checkbox, 4, 2, 1, 2)
+        layout.addWidget(self.max_loudness_warning, 5, 0, 1, 4)
+        layout.addWidget(self.listen_check_button, 6, 0, 1, 2, Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(self.listen_check_hint, 6, 0, 1, 4)
+        layout.addWidget(self.output_label, 7, 0)
+        layout.addWidget(self.output_edit, 7, 1)
+        layout.addWidget(output_button, 7, 2, Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(self.config_label, 8, 0)
+        layout.addWidget(self.config_edit, 8, 1)
+        layout.addWidget(config_button, 8, 2, Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(template_button, 8, 3, Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(self.advanced_button, 9, 0, 1, 4)
+        layout.addWidget(self.render_status_label, 10, 0)
+        layout.addWidget(self.render_work_pulse, 10, 1, Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(self.render_progress_bar, 10, 2)
+        layout.addWidget(self.cancel_render_button, 10, 3, Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(self.optimize_button, 11, 0, 1, 4)
 
         self.mastering_widgets = [
             self.render_context_label,
@@ -912,7 +943,7 @@ class MainWindow(QMainWindow):
             self.destination_combo,
             self.max_loudness_checkbox,
             self.max_loudness_warning,
-            self.listen_check_button,
+            self.listen_check_hint,
             self.strict_tp_checkbox,
             self.render_status_label,
             self.render_work_pulse,
@@ -948,6 +979,12 @@ class MainWindow(QMainWindow):
         }
         self.metric_labels["diagnostics"].setWordWrap(True)
         self.metric_labels["acoustic_note"].setWordWrap(True)
+        self.metric_labels["diagnostics"].setObjectName("sourceDetailValue")
+        self.metric_labels["acoustic_note"].setObjectName("sourceDetailValue")
+        self.metric_labels["diagnostics"].setMinimumHeight(46)
+        self.metric_labels["acoustic_note"].setMinimumHeight(46)
+        self.metric_labels["diagnostics"].setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.MinimumExpanding)
+        self.metric_labels["acoustic_note"].setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.MinimumExpanding)
 
         summary_layout = QGridLayout()
         summary_layout.setSpacing(10)
@@ -981,6 +1018,9 @@ class MainWindow(QMainWindow):
         self.source_details_panel = QFrame()
         self.source_details_panel.setObjectName("sourceDetailsPanel")
         details_layout = QFormLayout(self.source_details_panel)
+        details_layout.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
+        details_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        details_layout.setVerticalSpacing(12)
         details_layout.addRow("Diagnostics", self.metric_labels["diagnostics"])
         details_layout.addRow("Engineering note", self.metric_labels["acoustic_note"])
         self.waveform_label = QLabel("Waveform preview appears after file selection.")
@@ -995,7 +1035,11 @@ class MainWindow(QMainWindow):
     def _build_best_candidate(self) -> QGroupBox:
         self.best_box = QGroupBox("Best measured compromise")
         self.best_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
-        best_layout = QFormLayout(self.best_box)
+        best_layout = QGridLayout(self.best_box)
+        best_layout.setColumnStretch(0, 0)
+        best_layout.setColumnStretch(1, 1)
+        best_layout.setHorizontalSpacing(14)
+        best_layout.setVerticalSpacing(10)
         self.best_labels = {
             "name": QLabel("No candidate yet"),
             "score": QLabel("--"),
@@ -1003,8 +1047,13 @@ class MainWindow(QMainWindow):
             "reasons": QLabel("Step 4: select a candidate after rendering."),
             "path": QLabel("--"),
         }
-        self.best_labels["reasons"].setWordWrap(True)
-        self.best_labels["path"].setWordWrap(True)
+        for label in self.best_labels.values():
+            label.setObjectName("bestValue")
+            label.setWordWrap(True)
+            label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.MinimumExpanding)
+        self.best_labels["reasons"].setMinimumHeight(64)
+        self.best_labels["path"].setMinimumHeight(42)
         self.rating_spin = QSpinBox()
         self.rating_spin.setRange(1, 5)
         self.rating_spin.setValue(3)
@@ -1015,14 +1064,22 @@ class MainWindow(QMainWindow):
         self.save_note_button.setObjectName("secondaryAction")
         set_lucide_icon(self.save_note_button, "save")
         self.save_note_button.clicked.connect(self._save_listening_note)
-        best_layout.addRow("Chosen version", self.best_labels["name"])
-        best_layout.addRow("Score", self.best_labels["score"])
-        best_layout.addRow("Metrics", self.best_labels["metrics"])
-        best_layout.addRow("Why choose it", self.best_labels["reasons"])
-        best_layout.addRow("Rendered file", self.best_labels["path"])
-        best_layout.addRow("Next", self.listen_selected_button)
-        best_layout.addRow("Rating (1-5)", self.rating_spin)
-        best_layout.addRow("Preferences", self.save_note_button)
+
+        def add_best_row(row: int, label_text: str, widget: QWidget) -> None:
+            label = QLabel(label_text)
+            label.setObjectName("formLabel")
+            label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+            best_layout.addWidget(label, row, 0)
+            best_layout.addWidget(widget, row, 1)
+
+        add_best_row(0, "Chosen version", self.best_labels["name"])
+        add_best_row(1, "Score", self.best_labels["score"])
+        add_best_row(2, "Metrics", self.best_labels["metrics"])
+        add_best_row(3, "Why choose it", self.best_labels["reasons"])
+        add_best_row(4, "Rendered file", self.best_labels["path"])
+        add_best_row(5, "Next", self.listen_selected_button)
+        add_best_row(6, "Rating (1-5)", self.rating_spin)
+        add_best_row(7, "Preferences", self.save_note_button)
         return self.best_box
 
     def _build_listening_tools(self) -> QGroupBox:
@@ -1041,7 +1098,7 @@ class MainWindow(QMainWindow):
         set_lucide_icon(self.play_source_button, "play")
         set_lucide_icon(self.play_candidate_button, "headphones")
         set_lucide_icon(self.stop_audio_button, "square")
-        set_lucide_icon(self.new_analysis_button, "refresh", "#18181b")
+        set_lucide_icon(self.new_analysis_button, "refresh", PRIMARY_ICON_COLOR)
         self.play_source_button.clicked.connect(self._play_source)
         self.play_candidate_button.clicked.connect(self._play_selected_candidate)
         self.stop_audio_button.clicked.connect(self._stop_playback)
@@ -1150,6 +1207,11 @@ class MainWindow(QMainWindow):
         quit_action.triggered.connect(self.close)
         file_menu.addAction(quit_action)
 
+        connect_menu = self.menuBar().addMenu("Connect")
+        maker_action = QAction("Meet the maker", self)
+        maker_action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl("https://mathieuluyten.be/")))
+        connect_menu.addAction(maker_action)
+
     def _apply_styles(self) -> None:
         self.setStyleSheet(
             """
@@ -1186,9 +1248,9 @@ class MainWindow(QMainWindow):
             }
             #brandVersion {
                 background: #17171d;
-                border: 1px solid #2b2b33;
+                border: 1px solid #e5b94d;
                 border-radius: 8px;
-                color: #d7c6a1;
+                color: #e5b94d;
                 font-weight: 700;
                 padding: 5px 9px;
             }
@@ -1207,7 +1269,7 @@ class MainWindow(QMainWindow):
             }
             QTabBar::tab:selected {
                 background: #0fb7a7;
-                border-color: #4de0d2;
+                border-color: #e5b94d;
                 color: #071111;
                 font-weight: 700;
             }
@@ -1227,7 +1289,7 @@ class MainWindow(QMainWindow):
                 left: 16px;
                 top: 5px;
                 padding: 1px 10px;
-                color: #63e6d8;
+                color: #e5b94d;
                 background: #0b0b0f;
                 border-radius: 999px;
             }
@@ -1267,21 +1329,50 @@ class MainWindow(QMainWindow):
                 font-size: 18px;
                 font-weight: 800;
             }
+            #formLabel {
+                color: #f7f3ea;
+                background: transparent;
+                font-weight: 600;
+                padding: 9px 0;
+                min-width: 86px;
+            }
+            #bestValue {
+                color: #f7f3ea;
+                background: #09090b;
+                border-radius: 8px;
+                padding: 10px 12px;
+                line-height: 1.35;
+                min-height: 20px;
+            }
             #sourceDetailsPanel {
                 border: 1px solid #27272a;
                 border-radius: 12px;
                 background: #0f0f11;
                 padding: 10px;
             }
+            #sourceDetailValue {
+                color: #f7f3ea;
+                background: #09090b;
+                border-radius: 8px;
+                padding: 10px 12px;
+                line-height: 1.35;
+            }
             #targetHint {
                 color: #a1a1aa;
                 padding: 4px 2px;
             }
+            #statusHint {
+                color: #a1a1aa;
+                background: #09090b;
+                border: 1px solid #27272a;
+                border-radius: 8px;
+                padding: 9px 12px;
+            }
             #warningHint {
-                color: #facc15;
+                color: #e5b94d;
                 background: #18130a;
                 border: 0;
-                border-left: 3px solid #facc15;
+                border-left: 3px solid #e5b94d;
                 border-radius: 8px;
                 padding: 8px 12px;
             }
@@ -1338,7 +1429,7 @@ class MainWindow(QMainWindow):
                 font-weight: 700;
             }
             #comparisonChange {
-                color: #facc15;
+                color: #e5b94d;
                 background: #09090b;
                 border-radius: 8px;
                 padding: 8px;
@@ -1349,7 +1440,7 @@ class MainWindow(QMainWindow):
                 color: #5eead4;
             }
             #comparisonChange[tone="warn"] {
-                color: #facc15;
+                color: #e5b94d;
             }
             #comparisonVerdict {
                 color: #d4d4d8;
@@ -1362,6 +1453,7 @@ class MainWindow(QMainWindow):
                 padding: 10px 14px;
                 color: #042f2e;
                 font-weight: 700;
+                min-height: 36px;
             }
             QPushButton:hover {
                 background: #2dd4bf;
@@ -1371,11 +1463,11 @@ class MainWindow(QMainWindow):
                 color: #71717a;
             }
             #primaryAction {
-                background: #facc15;
+                background: #e5b94d;
                 color: #18181b;
             }
             #primaryAction:hover {
-                background: #fde047;
+                background: #f0c96a;
             }
             #secondaryAction {
                 background: #18181b;
@@ -1444,9 +1536,39 @@ class MainWindow(QMainWindow):
                 padding: 8px;
                 background: #09090b;
                 selection-background-color: #14b8a6;
+                min-height: 34px;
             }
             QLineEdit:focus, QComboBox:focus, QPlainTextEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {
-                border: 1px solid #2dd4bf;
+                border: 1px solid #e5b94d;
+            }
+            QComboBox {
+                padding-right: 32px;
+            }
+            QComboBox::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 30px;
+                border-left: 1px solid #27272a;
+                border-top-right-radius: 8px;
+                border-bottom-right-radius: 8px;
+                background: #121219;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                width: 0;
+                height: 0;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 6px solid #e5b94d;
+                margin-right: 8px;
+            }
+            QComboBox QAbstractItemView {
+                background: #121219;
+                color: #f7f3ea;
+                border: 1px solid #3f3f46;
+                selection-background-color: #14b8a6;
+                selection-color: #071111;
+                padding: 6px;
             }
             #inputWithUnit {
                 background: transparent;
@@ -1628,10 +1750,13 @@ class MainWindow(QMainWindow):
             source_analysis=source_analysis,
         )
 
-    def _apply_quick_target(self) -> None:
+    def _apply_quick_target(self, *_args: object) -> None:
         target = self.quick_target_combo.currentData()
         if isinstance(target, float):
             self.target_lufs_spin.setValue(target)
+        elif self.current_analysis is not None:
+            recommended_lufs, _ = self._recommended_target_lufs(self.current_analysis)
+            self.target_lufs_spin.setValue(recommended_lufs)
 
         label = self.quick_target_combo.currentText()
         hints = {
@@ -1656,6 +1781,7 @@ class MainWindow(QMainWindow):
             return
 
         self._active_worker_kind = request.kind
+        self._progress_started_at = time.monotonic()
         self.current_output_dir = Path(request.output_dir)
         if request.kind == "optimize":
             self.source_box.setVisible(False)
@@ -1665,6 +1791,8 @@ class MainWindow(QMainWindow):
             self.render_progress_bar.start_animation()
             self.render_work_pulse.start()
             self.render_status_label.setText("Preparing render...")
+            self.cancel_render_button.setVisible(True)
+            self.cancel_render_button.setEnabled(True)
             self._position_render_overlay()
             self.render_overlay.start("Creating versions...")
         else:
@@ -1685,6 +1813,15 @@ class MainWindow(QMainWindow):
         self._worker.failed.connect(self._cleanup_worker)
         self._thread.start()
 
+    def _cancel_active_worker(self) -> None:
+        if self._worker is None:
+            return
+        self.cancel_render_button.setEnabled(False)
+        self.render_status_label.setText("Cancelling after the current FFmpeg step...")
+        self.render_overlay.set_message("Cancelling...")
+        self._worker.cancel()
+        self._sync_button_cursors()
+
     def _cleanup_worker(self) -> None:
         if self._thread is None or self._worker is None:
             return
@@ -1696,11 +1833,13 @@ class MainWindow(QMainWindow):
         self._worker = None
         finished_kind = self._active_worker_kind
         self._active_worker_kind = None
+        self._progress_started_at = None
         self._set_busy(False)
         if finished_kind == "optimize":
             self.render_progress_bar.stop_animation()
             self.render_work_pulse.stop()
             self.render_progress_bar.setVisible(False)
+            self.cancel_render_button.setVisible(False)
             self.render_overlay.stop()
         else:
             self.progress_bar.setVisible(False)
@@ -1708,12 +1847,13 @@ class MainWindow(QMainWindow):
 
     def _on_progress(self, message: str, percent: int) -> None:
         message = self._display_progress_message(message)
+        progress_text = self._progress_text(message, percent)
         if self._active_worker_kind == "optimize":
-            self.render_status_label.setText(self._animated_status_text(message))
+            self.render_status_label.setText(self._animated_status_text(progress_text))
             self.render_progress_bar.setValue(percent)
-            self.render_overlay.set_message(message)
+            self.render_overlay.set_message(progress_text)
             return
-        self.status_label.setText(message)
+        self.status_label.setText(progress_text)
         self.progress_bar.setValue(percent)
 
     def _on_worker_finished(self, result: object) -> None:
@@ -1755,6 +1895,15 @@ class MainWindow(QMainWindow):
             self.workflow_tabs.setCurrentIndex(1)
 
     def _on_worker_failed(self, message: str) -> None:
+        if "operation_cancelled" in message:
+            if self._active_worker_kind == "optimize":
+                self.render_status_label.setText("Render cancelled. Adjust settings or create versions again.")
+                self.render_progress_bar.setValue(0)
+                self.render_overlay.set_message("Cancelled")
+            else:
+                self.status_label.setText("Analysis cancelled.")
+                self.progress_bar.setValue(0)
+            return
         if self._active_worker_kind == "optimize":
             self.render_progress_bar.stop_animation()
             self.render_work_pulse.stop()
@@ -1958,6 +2107,28 @@ class MainWindow(QMainWindow):
     def _animated_status_text(self, message: str) -> str:
         dots = "." * ((self.render_progress_bar._phase // 250) % 4)
         return f"{message}{dots}"
+
+    def _progress_text(self, message: str, percent: int) -> str:
+        if percent <= 0:
+            return f"{message} - estimating..."
+        if percent >= 100:
+            return f"{message} - 100%"
+        eta = self._estimated_time_remaining(percent)
+        if eta:
+            return f"{message} - {percent}% - about {eta} left"
+        return f"{message} - {percent}% - estimating..."
+
+    def _estimated_time_remaining(self, percent: int) -> str | None:
+        if self._progress_started_at is None or percent < 8:
+            return None
+        elapsed = max(time.monotonic() - self._progress_started_at, 0.1)
+        remaining = elapsed * ((100 - percent) / max(percent, 1))
+        if remaining < 5:
+            return "a few seconds"
+        minutes, seconds = divmod(int(remaining + 0.5), 60)
+        if minutes == 0:
+            return f"{seconds}s"
+        return f"{minutes}m {seconds:02d}s"
 
     def _candidate_rank(self, candidate: CandidateResult) -> int | None:
         if self.current_session is None:
@@ -2280,10 +2451,12 @@ class MainWindow(QMainWindow):
             self.play_candidate_button,
             self.listen_selected_button,
             self.save_note_button,
+            self.listen_check_button,
             self.change_source_button,
             self.input_edit,
         ]:
             widget.setDisabled(busy)
+        self._sync_button_cursors()
 
     def _update_actions(self) -> None:
         has_input = bool(self.input_edit.text().strip())
@@ -2311,12 +2484,16 @@ class MainWindow(QMainWindow):
         self.quick_target_combo.setEnabled(can_choose_target)
         self.target_lufs_spin.setEnabled(can_choose_target)
         self.max_loudness_warning.setVisible(has_analysis and self.max_loudness_checkbox.isChecked())
-        self.listen_check_button.setVisible(has_candidates and self.max_loudness_checkbox.isChecked())
-        self.listen_check_button.setEnabled(self._thread is None and has_candidate)
+        show_listen_check = has_analysis and self.max_loudness_checkbox.isChecked()
+        can_listen_check = self._thread is None and has_candidates and has_candidate
+        self.listen_check_button.setVisible(show_listen_check and can_listen_check)
+        self.listen_check_button.setEnabled(can_listen_check)
+        self.listen_check_hint.setVisible(show_listen_check and not can_listen_check)
         self.workflow_tabs.setTabEnabled(0, True)
         self.workflow_tabs.setTabEnabled(1, has_candidates)
         self.workflow_tabs.setTabEnabled(2, has_candidate)
         self._sync_control_visibility(has_input, has_analysis)
+        self._sync_button_cursors()
         self._schedule_window_fit()
 
     def _sync_control_visibility(self, has_input: bool, has_analysis: bool) -> None:
@@ -2331,6 +2508,19 @@ class MainWindow(QMainWindow):
             widget.setVisible(has_analysis)
         for widget in self.advanced_widgets:
             widget.setVisible(self.advanced_options_visible)
+        if has_analysis:
+            show_listen_check = self.max_loudness_checkbox.isChecked()
+            has_candidate = self._selected_candidate() is not None
+            has_candidates = bool(self.current_session and self.current_session.candidates)
+            can_listen_check = self._thread is None and has_candidates and has_candidate
+            self.max_loudness_warning.setVisible(show_listen_check)
+            self.listen_check_button.setVisible(show_listen_check and can_listen_check)
+            self.listen_check_hint.setVisible(show_listen_check and not can_listen_check)
+
+    def _sync_button_cursors(self) -> None:
+        for button in self.findChildren(QPushButton):
+            cursor = Qt.CursorShape.PointingHandCursor if button.isEnabled() and button.isVisible() else Qt.CursorShape.ArrowCursor
+            button.setCursor(cursor)
 
     def _schedule_window_fit(self) -> None:
         QTimer.singleShot(0, self._fit_window_to_content)
@@ -2353,20 +2543,20 @@ class MainWindow(QMainWindow):
         )
         if current_index == 0:
             if not has_input:
-                return 460
+                return 640
             if not has_analysis:
-                return 430
-            height = 590
+                return 640
+            height = 760
             if not self.source_box.isHidden():
                 height += 190
             if not self.source_details_panel.isHidden():
                 height += 170
             if self.advanced_options_visible:
                 height += 95
-            return min(height, 860)
+            return min(height, 940)
         if current_index == 1:
-            return 760 if self.details_panel.isVisible() else 640
-        return 760 if not self.history_table.isHidden() else 680
+            return 820 if self.details_panel.isVisible() else 720
+        return 820 if not self.history_table.isHidden() else 740
 
     def resizeEvent(self, event: object) -> None:
         super().resizeEvent(event)

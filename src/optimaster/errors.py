@@ -41,3 +41,12 @@ class LoudnessParseError(AppError):
             message="Could not parse FFmpeg loudness output",
             details=details,
         )
+
+
+class OperationCancelledError(AppError):
+    def __init__(self, details: str | None = None):
+        super().__init__(
+            code="operation_cancelled",
+            message="Operation cancelled by user",
+            details=details,
+        )
