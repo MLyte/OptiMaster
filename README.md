@@ -6,6 +6,8 @@ It analyzes a source file, renders several mastering candidates with FFmpeg, mea
 
 ## Public Beta
 
+Current beta version: `2026.4.24`.
+
 This project is in beta and is meant to be tested.
 
 Expect rough edges, especially around packaging, edge-case audio files, and UI polish. The app is useful today for local experiments, but you should still verify exports with your normal monitoring chain before release.
@@ -187,4 +189,4 @@ python -m pytest -q --basetemp .pytest-run -p no:cacheprovider
 
 ## License
 
-MIT
+OptiMaster is open source under the MIT License. See [LICENSE](LICENSE).
