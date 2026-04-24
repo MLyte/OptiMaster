@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QRectF, QSize, QThread, QTimer, Qt, QUrl, Signal
-from PySide6.QtGui import QAction, QColor, QDesktopServices, QDragEnterEvent, QDropEvent, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtCore import QObject, QRectF, QSettings, QSize, QThread, QTimer, Qt, QUrl, Signal
+from PySide6.QtGui import QAction, QActionGroup, QColor, QDesktopServices, QDragEnterEvent, QDropEvent, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication,
@@ -60,6 +60,277 @@ CTA_ICON_COLOR = "#071111"
 PRIMARY_ICON_COLOR = "#18181b"
 SUPPORT_ICON_COLOR = BRAND_ACCENT
 SUPPORTED_EXTENSIONS = {".wav", ".flac"}
+LANGUAGES = {"en": "English", "fr": "Français"}
+UI_TEXT = {
+    "en": {
+        "menu_file": "File",
+        "menu_settings": "Settings",
+        "menu_language": "Language",
+        "menu_connect": "Connect",
+        "menu_choose_audio": "Choose audio file",
+        "menu_choose_output": "Choose output folder",
+        "menu_quit": "Quit",
+        "menu_maker": "Meet the maker",
+        "tab_source": "Source",
+        "tab_versions": "Versions",
+        "tab_listen": "Listen / Export",
+        "session": "Session",
+        "hero_title": "Drop a WAV or FLAC premaster",
+        "hero_subtitle": "Classic path: choose a file, analyze it, then render candidates. Beta {version}.",
+        "choose_file": "Choose file",
+        "analyze_box": "Analyze source",
+        "source_selected": "Source selected. Analyze it to unlock mastering choices.",
+        "change_source": "Change source",
+        "analyze_source": "Analyze source",
+        "analyzed": "Analyzed",
+        "step_choose_source": "Step 1: choose a source file to begin.",
+        "render_box": "Render candidates",
+        "render_context_ready": "Source ready. Choose a target, then render versions.",
+        "review_source": "Review source analysis",
+        "hide_source": "Hide source analysis",
+        "optional_config": "Optional YAML config",
+        "mode_safe": "Clean / safe",
+        "mode_balanced": "Balanced master",
+        "mode_louder": "Push louder",
+        "destination_streaming": "Streaming clean",
+        "destination_soundcloud": "SoundCloud / DJ loud",
+        "destination_archive": "Archive safe",
+        "tp_strict": "True peak strict (safer after encoding)",
+        "target_auto": "Auto recommended",
+        "target_streaming": "Clean streaming master (-14 LUFS)",
+        "target_soundcloud": "SoundCloud loud clean (-10.5 LUFS)",
+        "target_club": "Club / DJ loud (-9 LUFS)",
+        "target_hard": "Hard / raw test (-8 LUFS)",
+        "target_extreme": "Extreme loudness check (-7 LUFS)",
+        "hint_auto": "Auto uses the source analysis to suggest a sane target.",
+        "hint_streaming": "Clean, conservative export for normalized streaming platforms.",
+        "hint_soundcloud": "Louder and direct for SoundCloud, while staying reasonably clean.",
+        "hint_club": "More pressure for DJ sets and club playback; listen for kick and sub control.",
+        "hint_hard": "Aggressive test for hard techno/raw energy; compare carefully before export.",
+        "hint_extreme": "Stress test only: high risk of crushed kick, harsh hats, and fatigue.",
+        "target_tooltip": "Target loudness for rendered candidates. Higher, closer to zero, sounds louder.",
+        "max_loudness": "Find the loudest clean version",
+        "max_loudness_tip": "Try several louder LUFS targets and rank the best loud/safe compromise.",
+        "max_loudness_warning": "Before exporting, listen A/B and check kick attack, sub control, distortion, and hat fatigue.",
+        "ab_check": "Go to A/B check",
+        "ab_unlock": "A/B check unlocks after versions are created.",
+        "choose_output": "Choose output",
+        "load_config": "Load config",
+        "create_template": "Create template",
+        "show_advanced": "Show advanced options",
+        "hide_advanced": "Hide advanced options",
+        "create_versions": "Create versions",
+        "export_final": "Export final",
+        "ready_render": "Ready to render candidate versions.",
+        "cancel": "Cancel",
+        "master_goal": "Master goal",
+        "quick_target": "Quick target",
+        "level_target": "Level target",
+        "usage": "Usage",
+        "output_folder": "Output folder",
+        "config_file": "Config file",
+        "source_analysis": "Source analysis",
+        "not_analyzed": "Not analyzed",
+        "diagnostics_pending": "Step 2 appears here after analysis.",
+        "acoustic_note": "Meters are technical indicators. Final validation depends on monitoring level and room acoustics.",
+        "profile": "Profile",
+        "true_peak": "True peak",
+        "dynamics": "Dynamics",
+        "show_waveform": "Show waveform and diagnostics",
+        "hide_waveform": "Hide waveform and diagnostics",
+        "waveform_pending": "Waveform preview appears after file selection.",
+        "best_box": "Best measured compromise",
+        "no_candidate_yet": "No candidate yet",
+        "candidate_pending": "Step 4: select a candidate after rendering.",
+        "listen_selected": "Listen to selected version",
+        "save_note": "Save listening note",
+        "chosen_version": "Chosen version",
+        "score": "Score",
+        "metrics": "Metrics",
+        "why_choose": "Why choose it",
+        "rendered_file": "Rendered file",
+        "next": "Next",
+        "rating": "Rating (1-5)",
+        "preferences": "Preferences",
+        "compare_export": "Compare and export",
+        "play_source": "Play source (A)",
+        "play_candidate": "Play candidate (B)",
+        "stop": "Stop",
+        "new_analysis": "New analysis",
+        "playback_pending": "Step 5: select a candidate, then compare A and B.",
+        "metric": "Metric",
+        "before": "Before",
+        "after": "After",
+        "change": "Change",
+        "verdict": "Verdict",
+        "loudness": "Loudness",
+        "show_history": "Show session history",
+        "hide_history": "Hide session history",
+        "choose_version": "Choose a version",
+        "choice": "Choice",
+        "version": "Version",
+        "show_scoring": "Show scoring details",
+        "hide_scoring": "Hide scoring details",
+        "details_placeholder": "Step 4: select the recommended version, or an alternative if you want to compare.",
+        "select_source_dialog": "Select source file",
+        "select_output_dialog": "Select output folder",
+        "select_config_dialog": "Select config file",
+        "create_config_dialog": "Create OptiMaster config template",
+        "config_created_title": "Config template created",
+        "config_created_body": "Created a commented YAML template:\n{path}",
+        "choose_audio_first": "Choose a WAV or FLAC file first.",
+        "step_analyze_next": "Step 1 complete. Step 2: analyze the source.",
+        "preparing_render": "Preparing render...",
+        "preparing_analysis": "Preparing analysis...",
+        "cancelling": "Cancelling after the current FFmpeg step...",
+        "selected_source_next": "Selected source: {name}. Next: analyze it.",
+        "source_ready_story": "Source ready. Choose a target, then render versions.",
+        "analyzed_story": "{name} is analyzed: {lufs:.1f} LUFS, {peak:.1f} dBTP, {lra:.1f} LU dynamics. Choose an objective, then render versions.",
+        "auto_recommendation": "Auto recommendation: {lufs:.1f} LUFS because {reason}.",
+        "step2_complete": "Step 2 complete. Suggested target: {lufs:.1f} LUFS ({reason}).",
+        "step3_complete": "Step 3 complete. Step 4: select a candidate.",
+        "render_complete": "Rendering complete. Review the recommended version.",
+        "render_cancelled": "Render cancelled. Adjust settings or create versions again.",
+        "cancelled": "Cancelled",
+        "analysis_cancelled": "Analysis cancelled.",
+        "render_failed": "Render failed. Check the error dialog for details.",
+        "task_failed": "Task failed. Check the error dialog for details.",
+    },
+    "fr": {
+        "menu_file": "Fichier",
+        "menu_settings": "Réglages",
+        "menu_language": "Langue",
+        "menu_connect": "Contact",
+        "menu_choose_audio": "Choisir un fichier audio",
+        "menu_choose_output": "Choisir le dossier de sortie",
+        "menu_quit": "Quitter",
+        "menu_maker": "Qui suis-je ?",
+        "tab_source": "Source",
+        "tab_versions": "Versions",
+        "tab_listen": "Écoute / Export",
+        "session": "Session",
+        "hero_title": "Dépose un premaster WAV ou FLAC",
+        "hero_subtitle": "Parcours simple : choisis un fichier, analyse-le, puis crée les versions. Beta {version}.",
+        "choose_file": "Choisir fichier",
+        "analyze_box": "Analyser la source",
+        "source_selected": "Source choisie. Analyse-la pour débloquer les réglages de mastering.",
+        "change_source": "Changer source",
+        "analyze_source": "Analyser source",
+        "analyzed": "Analysé",
+        "step_choose_source": "Étape 1 : choisis un fichier source.",
+        "render_box": "Créer les versions",
+        "render_context_ready": "Source prête. Choisis un objectif, puis crée les versions.",
+        "review_source": "Voir analyse source",
+        "hide_source": "Masquer analyse source",
+        "optional_config": "Config YAML optionnelle",
+        "mode_safe": "Propre / safe",
+        "mode_balanced": "Master équilibré",
+        "mode_louder": "Plus fort",
+        "destination_streaming": "Streaming propre",
+        "destination_soundcloud": "SoundCloud / DJ fort",
+        "destination_archive": "Archive safe",
+        "tp_strict": "True peak strict (plus safe après encodage)",
+        "target_auto": "Recommandé auto",
+        "target_streaming": "Master streaming propre (-14 LUFS)",
+        "target_soundcloud": "SoundCloud fort propre (-10.5 LUFS)",
+        "target_club": "Club / DJ fort (-9 LUFS)",
+        "target_hard": "Hard / raw test (-8 LUFS)",
+        "target_extreme": "Test extrême loudness (-7 LUFS)",
+        "hint_auto": "Auto utilise l’analyse source pour proposer une cible saine.",
+        "hint_streaming": "Export propre et prudent pour les plateformes avec normalisation.",
+        "hint_soundcloud": "Plus fort et direct pour SoundCloud, tout en restant raisonnablement propre.",
+        "hint_club": "Plus de pression pour DJ sets et club ; écoute le kick et le sub.",
+        "hint_hard": "Test agressif hard techno/raw ; compare avant d’exporter.",
+        "hint_extreme": "Stress test seulement : gros risque de kick écrasé, hats durs et fatigue.",
+        "target_tooltip": "Loudness cible des versions créées. Plus proche de zéro = plus fort.",
+        "max_loudness": "Trouver la version propre la plus forte",
+        "max_loudness_tip": "Teste plusieurs cibles LUFS plus fortes et classe le meilleur compromis loud/safe.",
+        "max_loudness_warning": "Avant export, écoute A/B et vérifie l’attaque du kick, le sub, la distorsion et la fatigue des hats.",
+        "ab_check": "Aller au check A/B",
+        "ab_unlock": "Le check A/B se débloque après création des versions.",
+        "choose_output": "Sortie",
+        "load_config": "Charger config",
+        "create_template": "Template YAML",
+        "show_advanced": "Afficher options avancées",
+        "hide_advanced": "Masquer options avancées",
+        "create_versions": "Créer versions",
+        "export_final": "Exporter final",
+        "ready_render": "Prêt à créer les versions candidates.",
+        "cancel": "Annuler",
+        "master_goal": "Objectif",
+        "quick_target": "Cible rapide",
+        "level_target": "Niveau cible",
+        "usage": "Usage",
+        "output_folder": "Dossier sortie",
+        "config_file": "Config",
+        "source_analysis": "Analyse source",
+        "not_analyzed": "Non analysé",
+        "diagnostics_pending": "L’étape 2 apparaîtra ici après analyse.",
+        "acoustic_note": "Les mesures sont des indicateurs techniques. La validation finale dépend du niveau d’écoute et de la pièce.",
+        "profile": "Profil",
+        "true_peak": "True peak",
+        "dynamics": "Dynamique",
+        "show_waveform": "Afficher onde et diagnostics",
+        "hide_waveform": "Masquer onde et diagnostics",
+        "waveform_pending": "L’aperçu d’onde apparaît après sélection du fichier.",
+        "best_box": "Meilleur compromis mesuré",
+        "no_candidate_yet": "Aucune version",
+        "candidate_pending": "Étape 4 : sélectionne une version après rendu.",
+        "listen_selected": "Écouter la version choisie",
+        "save_note": "Sauver note d’écoute",
+        "chosen_version": "Version choisie",
+        "score": "Score",
+        "metrics": "Mesures",
+        "why_choose": "Pourquoi",
+        "rendered_file": "Fichier rendu",
+        "next": "Suite",
+        "rating": "Note (1-5)",
+        "preferences": "Préférences",
+        "compare_export": "Comparer et exporter",
+        "play_source": "Lire source (A)",
+        "play_candidate": "Lire version (B)",
+        "stop": "Stop",
+        "new_analysis": "Nouvelle analyse",
+        "playback_pending": "Étape 5 : sélectionne une version, puis compare A et B.",
+        "metric": "Mesure",
+        "before": "Avant",
+        "after": "Après",
+        "change": "Différence",
+        "verdict": "Avis",
+        "loudness": "Loudness",
+        "show_history": "Afficher historique",
+        "hide_history": "Masquer historique",
+        "choose_version": "Choisir une version",
+        "choice": "Choix",
+        "version": "Version",
+        "show_scoring": "Afficher scoring",
+        "hide_scoring": "Masquer scoring",
+        "details_placeholder": "Étape 4 : sélectionne la version recommandée, ou une alternative à comparer.",
+        "select_source_dialog": "Choisir un fichier source",
+        "select_output_dialog": "Choisir le dossier de sortie",
+        "select_config_dialog": "Choisir un fichier config",
+        "create_config_dialog": "Créer un template OptiMaster",
+        "config_created_title": "Template config créé",
+        "config_created_body": "Template YAML commenté créé :\n{path}",
+        "choose_audio_first": "Choisis d’abord un fichier WAV ou FLAC.",
+        "step_analyze_next": "Étape 1 terminée. Étape 2 : analyser la source.",
+        "preparing_render": "Préparation du rendu...",
+        "preparing_analysis": "Préparation de l’analyse...",
+        "cancelling": "Annulation après l’étape FFmpeg en cours...",
+        "selected_source_next": "Source choisie : {name}. Prochaine étape : analyse.",
+        "source_ready_story": "Source prête. Choisis une cible, puis crée les versions.",
+        "analyzed_story": "{name} est analysé : {lufs:.1f} LUFS, {peak:.1f} dBTP, {lra:.1f} LU de dynamique. Choisis un objectif, puis crée les versions.",
+        "auto_recommendation": "Recommandation auto : {lufs:.1f} LUFS car {reason}.",
+        "step2_complete": "Étape 2 terminée. Cible suggérée : {lufs:.1f} LUFS ({reason}).",
+        "step3_complete": "Étape 3 terminée. Étape 4 : sélectionne une version.",
+        "render_complete": "Rendu terminé. Vérifie la version recommandée.",
+        "render_cancelled": "Rendu annulé. Ajuste les réglages ou recrée les versions.",
+        "cancelled": "Annulé",
+        "analysis_cancelled": "Analyse annulée.",
+        "render_failed": "Le rendu a échoué. Vérifie le message d’erreur.",
+        "task_failed": "La tâche a échoué. Vérifie le message d’erreur.",
+    },
+}
 PRESET_DISPLAY_NAMES = {
     "do_almost_nothing": "Light polish",
     "transparent_trim": "Clean headroom",
@@ -620,6 +891,10 @@ class MainWindow(QMainWindow):
         self.setWindowIcon(app_icon())
         self.resize(1240, 760)
         self.setMinimumSize(1080, 640)
+        self.settings = QSettings("OptiMaster", "OptiMaster")
+        self.language = str(self.settings.value("language", "en"))
+        if self.language not in UI_TEXT:
+            self.language = "en"
 
         self.current_analysis: SourceAnalysis | None = None
         self.current_session: OptimizationSession | None = None
@@ -644,6 +919,7 @@ class MainWindow(QMainWindow):
         self._progress_started_at: float | None = None
 
         self._build_ui()
+        self._apply_language_texts()
         self._apply_styles()
         self._load_history()
         self._update_actions()
@@ -705,12 +981,12 @@ class MainWindow(QMainWindow):
         logo.setPixmap(app_icon().pixmap(38, 38))
         name = QLabel(APP_TITLE)
         name.setObjectName("brandName")
-        version = QLabel(f"Beta {APP_DISPLAY_VERSION}")
-        version.setObjectName("brandVersion")
+        self.version_label = QLabel(f"Beta {APP_DISPLAY_VERSION}")
+        self.version_label.setObjectName("brandVersion")
 
         layout.addWidget(logo)
         layout.addWidget(name)
-        layout.addWidget(version)
+        layout.addWidget(self.version_label)
         layout.addStretch(1)
         return brand
 
@@ -727,29 +1003,29 @@ class MainWindow(QMainWindow):
         title_icon = QLabel()
         title_icon.setPixmap(lucide_icon("waveform", BRAND_ACCENT).pixmap(28, 28))
         title_icon.setObjectName("heroIcon")
-        title = QLabel("Drop a WAV or FLAC premaster")
-        title.setObjectName("heroTitle")
+        self.hero_title = QLabel("Drop a WAV or FLAC premaster")
+        self.hero_title.setObjectName("heroTitle")
         title_row.addWidget(title_icon)
-        title_row.addWidget(title)
+        title_row.addWidget(self.hero_title)
         title_row.addStretch(1)
-        subtitle = QLabel(
+        self.hero_subtitle = QLabel(
             f"Classic path: choose a file, analyze it, then render candidates. Beta {APP_DISPLAY_VERSION}."
         )
-        subtitle.setWordWrap(True)
+        self.hero_subtitle.setWordWrap(True)
 
         row = QHBoxLayout()
         self.input_edit = QLineEdit()
         self.input_edit.setPlaceholderText(r"C:\path\to\track.wav")
         self.input_edit.textChanged.connect(self._update_actions)
-        browse_button = QPushButton("Choose file")
-        browse_button.setObjectName("secondaryAction")
-        set_lucide_icon(browse_button, "upload")
-        browse_button.clicked.connect(self._browse_input_file)
+        self.browse_button = QPushButton("Choose file")
+        self.browse_button.setObjectName("secondaryAction")
+        set_lucide_icon(self.browse_button, "upload")
+        self.browse_button.clicked.connect(self._browse_input_file)
         row.addWidget(self.input_edit, stretch=1)
-        row.addWidget(browse_button)
+        row.addWidget(self.browse_button)
 
         drop_layout.addLayout(title_row)
-        drop_layout.addWidget(subtitle)
+        drop_layout.addWidget(self.hero_subtitle)
         drop_layout.addLayout(row)
         layout.addWidget(self.drop_frame)
         self.drop_frame.file_dropped.connect(self._set_input_path)
@@ -868,18 +1144,18 @@ class MainWindow(QMainWindow):
         self.listen_check_hint.setWordWrap(True)
         self.listen_check_hint.setVisible(False)
 
-        output_button = QPushButton("Choose output")
-        output_button.setObjectName("utilityAction")
-        set_lucide_icon(output_button, "folder-open")
-        output_button.clicked.connect(self._browse_output_dir)
-        config_button = QPushButton("Load config")
-        config_button.setObjectName("utilityAction")
-        set_lucide_icon(config_button, "file-cog")
-        config_button.clicked.connect(self._browse_config_file)
-        template_button = QPushButton("Create template")
-        template_button.setObjectName("utilityAction")
-        set_lucide_icon(template_button, "file-plus")
-        template_button.clicked.connect(self._create_config_template)
+        self.output_button = QPushButton("Choose output")
+        self.output_button.setObjectName("utilityAction")
+        set_lucide_icon(self.output_button, "folder-open")
+        self.output_button.clicked.connect(self._browse_output_dir)
+        self.config_button = QPushButton("Load config")
+        self.config_button.setObjectName("utilityAction")
+        set_lucide_icon(self.config_button, "file-cog")
+        self.config_button.clicked.connect(self._browse_config_file)
+        self.template_button = QPushButton("Create template")
+        self.template_button.setObjectName("utilityAction")
+        set_lucide_icon(self.template_button, "file-plus")
+        self.template_button.clicked.connect(self._create_config_template)
         self.advanced_button = QPushButton("Show advanced options")
         self.advanced_button.setObjectName("secondaryAction")
         set_lucide_icon(self.advanced_button, "settings")
@@ -934,11 +1210,11 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.listen_check_hint, 6, 0, 1, 4)
         layout.addWidget(self.output_label, 7, 0)
         layout.addWidget(self.output_edit, 7, 1)
-        layout.addWidget(output_button, 7, 2, Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(self.output_button, 7, 2, Qt.AlignmentFlag.AlignRight)
         layout.addWidget(self.config_label, 8, 0)
         layout.addWidget(self.config_edit, 8, 1)
-        layout.addWidget(config_button, 8, 2, Qt.AlignmentFlag.AlignRight)
-        layout.addWidget(template_button, 8, 3, Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(self.config_button, 8, 2, Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(self.template_button, 8, 3, Qt.AlignmentFlag.AlignRight)
         layout.addWidget(self.advanced_button, 9, 0, 1, 4)
         layout.addWidget(self.render_status_label, 10, 0)
         layout.addWidget(self.render_work_pulse, 10, 1, Qt.AlignmentFlag.AlignLeft)
@@ -971,11 +1247,11 @@ class MainWindow(QMainWindow):
         self.advanced_widgets = [
             self.output_label,
             self.output_edit,
-            output_button,
+            self.output_button,
             self.config_label,
             self.config_edit,
-            config_button,
-            template_button,
+            self.config_button,
+            self.template_button,
         ]
         self.render_overlay = RenderBusyOverlay(self.render_box)
         return self.render_box
@@ -1006,6 +1282,7 @@ class MainWindow(QMainWindow):
 
         summary_layout = QGridLayout()
         summary_layout.setSpacing(10)
+        self.source_metric_titles: dict[str, QLabel] = {}
         for index, (key, label) in enumerate(
             [
                 ("profile", "Profile"),
@@ -1021,6 +1298,7 @@ class MainWindow(QMainWindow):
             tile_layout.setSpacing(4)
             title = QLabel(label)
             title.setObjectName("sourceMetricLabel")
+            self.source_metric_titles[key] = title
             self.metric_labels[key].setObjectName("sourceMetricValue")
             tile_layout.addWidget(title)
             tile_layout.addWidget(self.metric_labels[key])
@@ -1083,26 +1361,29 @@ class MainWindow(QMainWindow):
         set_lucide_icon(self.save_note_button, "save")
         self.save_note_button.clicked.connect(self._save_listening_note)
 
-        def add_best_row(row: int, label_text: str, widget: QWidget) -> None:
+        self.best_row_labels: dict[str, QLabel] = {}
+
+        def add_best_row(row: int, key: str, label_text: str, widget: QWidget) -> None:
             label = QLabel(label_text)
             label.setObjectName("formLabel")
             label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+            self.best_row_labels[key] = label
             best_layout.addWidget(label, row, 0)
             best_layout.addWidget(widget, row, 1)
 
-        add_best_row(0, "Chosen version", self.best_labels["name"])
-        add_best_row(1, "Score", self.best_labels["score"])
-        add_best_row(2, "Metrics", self.best_labels["metrics"])
-        add_best_row(3, "Why choose it", self.best_labels["reasons"])
-        add_best_row(4, "Rendered file", self.best_labels["path"])
-        add_best_row(5, "Next", self.listen_selected_button)
-        add_best_row(6, "Rating (1-5)", self.rating_spin)
-        add_best_row(7, "Preferences", self.save_note_button)
+        add_best_row(0, "chosen_version", "Chosen version", self.best_labels["name"])
+        add_best_row(1, "score", "Score", self.best_labels["score"])
+        add_best_row(2, "metrics", "Metrics", self.best_labels["metrics"])
+        add_best_row(3, "why_choose", "Why choose it", self.best_labels["reasons"])
+        add_best_row(4, "rendered_file", "Rendered file", self.best_labels["path"])
+        add_best_row(5, "next", "Next", self.listen_selected_button)
+        add_best_row(6, "rating", "Rating (1-5)", self.rating_spin)
+        add_best_row(7, "preferences", "Preferences", self.save_note_button)
         return self.best_box
 
     def _build_listening_tools(self) -> QGroupBox:
-        box = QGroupBox("Compare and export")
-        layout = QVBoxLayout(box)
+        self.listening_box = QGroupBox("Compare and export")
+        layout = QVBoxLayout(self.listening_box)
 
         listening_row = QHBoxLayout()
         self.play_source_button = QPushButton("Play source (A)")
@@ -1139,9 +1420,19 @@ class MainWindow(QMainWindow):
         before_after_layout = QGridLayout(self.before_after_panel)
         before_after_layout.setHorizontalSpacing(12)
         before_after_layout.setVerticalSpacing(8)
-        for col, title in enumerate(["Metric", "Before", "After", "Change", "Verdict"]):
+        self.comparison_header_labels: dict[str, QLabel] = {}
+        for col, (key, title) in enumerate(
+            [
+                ("metric", "Metric"),
+                ("before", "Before"),
+                ("after", "After"),
+                ("change", "Change"),
+                ("verdict", "Verdict"),
+            ]
+        ):
             header = QLabel(title)
             header.setObjectName("comparisonColumnTitle")
+            self.comparison_header_labels[key] = header
             before_after_layout.addWidget(header, 0, col)
         self.comparison_rows = {
             "loudness": ComparisonRow("Loudness"),
@@ -1174,11 +1465,11 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.before_after_panel)
         layout.addWidget(self.history_button)
         layout.addWidget(self.history_table)
-        return box
+        return self.listening_box
 
     def _build_results(self) -> QGroupBox:
-        box = QGroupBox("Choose a version")
-        layout = QVBoxLayout(box)
+        self.results_box = QGroupBox("Choose a version")
+        layout = QVBoxLayout(self.results_box)
 
         self.results_table = QTableWidget(0, 6)
         self.results_table.setHorizontalHeaderLabels(["Choice", "Version", "Score", "LUFS", "TP", "LRA"])
@@ -1208,27 +1499,178 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.results_table)
         layout.addWidget(self.details_button)
         layout.addWidget(self.details_panel)
-        return box
+        return self.results_box
 
     def _build_menu(self) -> None:
-        file_menu = self.menuBar().addMenu("File")
-        choose_input_action = QAction("Choose audio file", self)
-        choose_input_action.triggered.connect(self._browse_input_file)
-        file_menu.addAction(choose_input_action)
+        self.file_menu = self.menuBar().addMenu("File")
+        self.choose_input_action = QAction("Choose audio file", self)
+        self.choose_input_action.triggered.connect(self._browse_input_file)
+        self.file_menu.addAction(self.choose_input_action)
 
-        choose_output_action = QAction("Choose output folder", self)
-        choose_output_action.triggered.connect(self._browse_output_dir)
-        file_menu.addAction(choose_output_action)
+        self.choose_output_action = QAction("Choose output folder", self)
+        self.choose_output_action.triggered.connect(self._browse_output_dir)
+        self.file_menu.addAction(self.choose_output_action)
 
-        file_menu.addSeparator()
-        quit_action = QAction("Quit", self)
-        quit_action.triggered.connect(self.close)
-        file_menu.addAction(quit_action)
+        self.file_menu.addSeparator()
+        self.quit_action = QAction("Quit", self)
+        self.quit_action.triggered.connect(self.close)
+        self.file_menu.addAction(self.quit_action)
 
-        connect_menu = self.menuBar().addMenu("Connect")
-        maker_action = QAction("Meet the maker", self)
-        maker_action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl("https://mathieuluyten.be/")))
-        connect_menu.addAction(maker_action)
+        self.settings_menu = self.menuBar().addMenu("Settings")
+        self.language_menu = self.settings_menu.addMenu("Language")
+        self.language_group = QActionGroup(self)
+        self.language_group.setExclusive(True)
+        self.language_actions: dict[str, QAction] = {}
+        for code, label in LANGUAGES.items():
+            action = QAction(label, self, checkable=True)
+            action.setData(code)
+            action.setChecked(code == self.language)
+            action.triggered.connect(lambda _checked=False, language=code: self._set_language(language))
+            self.language_group.addAction(action)
+            self.language_menu.addAction(action)
+            self.language_actions[code] = action
+
+        self.connect_menu = self.menuBar().addMenu("Connect")
+        self.maker_action = QAction("Meet the maker", self)
+        self.maker_action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl("https://mathieuluyten.be/")))
+        self.connect_menu.addAction(self.maker_action)
+
+    def _t(self, key: str, **kwargs: object) -> str:
+        text = UI_TEXT.get(self.language, UI_TEXT["en"]).get(key, UI_TEXT["en"].get(key, key))
+        return text.format(**kwargs) if kwargs else text
+
+    def _set_language(self, language: str) -> None:
+        if language not in UI_TEXT or language == self.language:
+            return
+        self.language = language
+        self.settings.setValue("language", language)
+        self._apply_language_texts()
+        self._update_actions()
+
+    def _set_combo_text(self, combo: QComboBox, data: object, text: str) -> None:
+        for index in range(combo.count()):
+            if combo.itemData(index) == data:
+                combo.setItemText(index, text)
+                return
+
+    def _apply_language_texts(self) -> None:
+        self.setWindowTitle(f"{APP_TITLE} - {APP_DISPLAY_VERSION}")
+        self.version_label.setText(f"Beta {APP_DISPLAY_VERSION}")
+        self.file_menu.setTitle(self._t("menu_file"))
+        self.settings_menu.setTitle(self._t("menu_settings"))
+        self.language_menu.setTitle(self._t("menu_language"))
+        self.connect_menu.setTitle(self._t("menu_connect"))
+        self.choose_input_action.setText(self._t("menu_choose_audio"))
+        self.choose_output_action.setText(self._t("menu_choose_output"))
+        self.quit_action.setText(self._t("menu_quit"))
+        self.maker_action.setText(self._t("menu_maker"))
+
+        self.workflow_tabs.setTabText(0, self._t("tab_source"))
+        self.workflow_tabs.setTabText(1, self._t("tab_versions"))
+        self.workflow_tabs.setTabText(2, self._t("tab_listen"))
+        self.session_box.setTitle(self._t("session"))
+        self.hero_title.setText(self._t("hero_title"))
+        self.hero_subtitle.setText(self._t("hero_subtitle", version=APP_DISPLAY_VERSION))
+        self.browse_button.setText(self._t("choose_file"))
+
+        self.analyze_box.setTitle(self._t("analyze_box"))
+        self.selected_source_label.setText(self._t("source_selected"))
+        self.change_source_button.setText(self._t("change_source"))
+        self.analyze_button.setText(self._t("analyzed") if self.current_analysis else self._t("analyze_source"))
+        if not self.input_edit.text().strip():
+            self.status_label.setText(self._t("step_choose_source"))
+
+        self.render_box.setTitle(self._t("render_box"))
+        if self.current_analysis is None:
+            self.render_context_label.setText(self._t("render_context_ready"))
+        self.source_review_button.setText(
+            self._t("hide_source") if not self.source_box.isHidden() else self._t("review_source")
+        )
+        self.config_edit.setPlaceholderText(self._t("optional_config"))
+        self._set_combo_text(self.mode_combo, OptimizationMode.SAFE, self._t("mode_safe"))
+        self._set_combo_text(self.mode_combo, OptimizationMode.BALANCED, self._t("mode_balanced"))
+        self._set_combo_text(self.mode_combo, OptimizationMode.LOUDER, self._t("mode_louder"))
+        self._set_combo_text(self.destination_combo, "streaming_prudent", self._t("destination_streaming"))
+        self._set_combo_text(self.destination_combo, "club_loud", self._t("destination_soundcloud"))
+        self._set_combo_text(self.destination_combo, "archive_safe", self._t("destination_archive"))
+        self.strict_tp_checkbox.setText(self._t("tp_strict"))
+        self._set_combo_text(self.quick_target_combo, None, self._t("target_auto"))
+        self._set_combo_text(self.quick_target_combo, -14.0, self._t("target_streaming"))
+        self._set_combo_text(self.quick_target_combo, -10.5, self._t("target_soundcloud"))
+        self._set_combo_text(self.quick_target_combo, -9.0, self._t("target_club"))
+        self._set_combo_text(self.quick_target_combo, -8.0, self._t("target_hard"))
+        self._set_combo_text(self.quick_target_combo, -7.0, self._t("target_extreme"))
+        self.target_lufs_spin.setToolTip(self._t("target_tooltip"))
+        self.max_loudness_checkbox.setText(self._t("max_loudness"))
+        self.max_loudness_checkbox.setToolTip(self._t("max_loudness_tip"))
+        self.max_loudness_warning.setText(self._t("max_loudness_warning"))
+        self.listen_check_button.setText(self._t("ab_check"))
+        self.listen_check_hint.setText(self._t("ab_unlock"))
+        self.output_button.setText(self._t("choose_output"))
+        self.config_button.setText(self._t("load_config"))
+        self.template_button.setText(self._t("create_template"))
+        self.advanced_button.setText(self._t("hide_advanced") if self.advanced_options_visible else self._t("show_advanced"))
+        self.optimize_button.setText(self._t("create_versions"))
+        self.export_button.setText(self._t("export_final"))
+        if self._thread is None:
+            self.render_status_label.setText(self._t("ready_render"))
+        self.cancel_render_button.setText(self._t("cancel"))
+        self.mode_label.setText(self._t("master_goal"))
+        self.quick_target_label.setText(self._t("quick_target"))
+        self.target_lufs_label.setText(self._t("level_target"))
+        self.destination_label.setText(self._t("usage"))
+        self.output_label.setText(self._t("output_folder"))
+        self.config_label.setText(self._t("config_file"))
+
+        self.source_box.setTitle(self._t("source_analysis"))
+        if self.current_analysis is None:
+            self.metric_labels["profile"].setText(self._t("not_analyzed"))
+            self.metric_labels["diagnostics"].setText(self._t("diagnostics_pending"))
+        self.metric_labels["acoustic_note"].setText(self._t("acoustic_note"))
+        self.source_metric_titles["profile"].setText(self._t("profile"))
+        self.source_metric_titles["true_peak"].setText(self._t("true_peak"))
+        self.source_metric_titles["lra"].setText(self._t("dynamics"))
+        self.source_details_button.setText(
+            self._t("hide_waveform") if not self.source_details_panel.isHidden() else self._t("show_waveform")
+        )
+        if self.waveform_label.pixmap() is None or self.waveform_label.pixmap().isNull():
+            self.waveform_label.setText(self._t("waveform_pending"))
+
+        self.best_box.setTitle(self._t("best_box"))
+        if self.current_session is None:
+            self.best_labels["name"].setText(self._t("no_candidate_yet"))
+            self.best_labels["reasons"].setText(self._t("candidate_pending"))
+        self.listen_selected_button.setText(self._t("listen_selected"))
+        self.save_note_button.setText(self._t("save_note"))
+        for key, label in self.best_row_labels.items():
+            label.setText(self._t(key))
+
+        self.listening_box.setTitle(self._t("compare_export"))
+        self.play_source_button.setText(self._t("play_source"))
+        self.play_candidate_button.setText(self._t("play_candidate"))
+        self.stop_audio_button.setText(self._t("stop"))
+        self.new_analysis_button.setText(self._t("new_analysis"))
+        if self.current_playback is None:
+            self.playback_label.setText(self._t("playback_pending"))
+        for key, label in self.comparison_header_labels.items():
+            label.setText(self._t(key))
+        self.comparison_rows["loudness"].metric_label.setText(self._t("loudness"))
+        self.comparison_rows["peak"].metric_label.setText(self._t("true_peak"))
+        self.comparison_rows["lra"].metric_label.setText(self._t("dynamics"))
+        self.comparison_rows["score"].metric_label.setText(self._t("score"))
+        self.history_button.setText(self._t("hide_history") if not self.history_table.isHidden() else self._t("show_history"))
+        self.history_table.setHorizontalHeaderLabels(["Date (UTC)", "Session", self._t("master_goal"), self._t("best_box"), self._t("tab_source")])
+
+        self.results_box.setTitle(self._t("choose_version"))
+        self.results_table.setHorizontalHeaderLabels(
+            [self._t("choice"), self._t("version"), self._t("score"), "LUFS", "TP", "LRA"]
+        )
+        self.details_button.setText(self._t("hide_scoring") if self.details_panel.isVisible() else self._t("show_scoring"))
+        self.details_panel.setPlaceholderText(self._t("details_placeholder"))
+        self._apply_quick_target()
+        for action_code, action in self.language_actions.items():
+            action.setChecked(action_code == self.language)
+        self._schedule_window_fit()
 
     def _apply_styles(self) -> None:
         self.setStyleSheet(
@@ -1657,7 +2099,7 @@ class MainWindow(QMainWindow):
     def _browse_input_file(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select source file",
+            self._t("select_source_dialog"),
             str(Path.home()),
             "Audio files (*.wav *.flac)",
         )
@@ -1667,7 +2109,7 @@ class MainWindow(QMainWindow):
     def _browse_output_dir(self) -> None:
         folder = QFileDialog.getExistingDirectory(
             self,
-            "Select output folder",
+            self._t("select_output_dialog"),
             self.output_edit.text() or str(Path.cwd()),
         )
         if folder:
@@ -1676,7 +2118,7 @@ class MainWindow(QMainWindow):
     def _browse_config_file(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select config file",
+            self._t("select_config_dialog"),
             str(Path.cwd()),
             "YAML files (*.yaml *.yml)",
         )
@@ -1688,7 +2130,7 @@ class MainWindow(QMainWindow):
         default_dir = Path(source_path).resolve().parent if source_path else Path.cwd()
         file_path, _ = QFileDialog.getSaveFileName(
             self,
-            "Create OptiMaster config template",
+            self._t("create_config_dialog"),
             str(default_dir / "optimaster_config_template.yaml"),
             "YAML files (*.yaml *.yml)",
         )
@@ -1702,14 +2144,14 @@ class MainWindow(QMainWindow):
         self.config_edit.setText(str(destination))
         QMessageBox.information(
             self,
-            "Config template created",
-            f"Created a commented YAML template:\n{destination}",
+            self._t("config_created_title"),
+            self._t("config_created_body", path=destination),
         )
 
     def _toggle_advanced_options(self) -> None:
         self.advanced_options_visible = not self.advanced_options_visible
         self.advanced_button.setText(
-            "Hide advanced options" if self.advanced_options_visible else "Show advanced options"
+            self._t("hide_advanced") if self.advanced_options_visible else self._t("show_advanced")
         )
         self._update_actions()
 
@@ -1725,10 +2167,10 @@ class MainWindow(QMainWindow):
             self._clear_results()
             self.new_analysis_button.setVisible(False)
             self.source_details_panel.setVisible(False)
-            self.source_details_button.setText("Show waveform and diagnostics")
+            self.source_details_button.setText(self._t("show_waveform"))
             self.source_box.setVisible(False)
-            self.source_review_button.setText("Review source analysis")
-        self.status_label.setText("Step 1 complete. Step 2: analyze the source.")
+            self.source_review_button.setText(self._t("review_source"))
+        self.status_label.setText(self._t("step_analyze_next"))
         self._update_waveform_preview(path_obj)
         self.progress_bar.setValue(0)
         self.workflow_tabs.setCurrentIndex(0)
@@ -1747,7 +2189,7 @@ class MainWindow(QMainWindow):
     def _build_request(self, kind: str) -> WorkerRequest | None:
         input_file = self.input_edit.text().strip()
         if not input_file:
-            self._show_error("Choose a WAV or FLAC file first.")
+            self._show_error(self._t("choose_audio_first"))
             return None
 
         output_dir = self.output_edit.text().strip() or str(Path(input_file).resolve().parent / "renders")
@@ -1776,16 +2218,15 @@ class MainWindow(QMainWindow):
             recommended_lufs, _ = self._recommended_target_lufs(self.current_analysis)
             self.target_lufs_spin.setValue(recommended_lufs)
 
-        label = self.quick_target_combo.currentText()
         hints = {
-            "Auto recommended": "Auto uses the source analysis to suggest a sane target.",
-            "Clean streaming master (-14 LUFS)": "Clean, conservative export for normalized streaming platforms.",
-            "SoundCloud loud clean (-10.5 LUFS)": "Louder and direct for SoundCloud, while staying reasonably clean.",
-            "Club / DJ loud (-9 LUFS)": "More pressure for DJ sets and club playback; listen for kick and sub control.",
-            "Hard / raw test (-8 LUFS)": "Aggressive test for hard techno/raw energy; compare carefully before export.",
-            "Extreme loudness check (-7 LUFS)": "Stress test only: high risk of crushed kick, harsh hats, and fatigue.",
+            None: self._t("hint_auto"),
+            -14.0: self._t("hint_streaming"),
+            -10.5: self._t("hint_soundcloud"),
+            -9.0: self._t("hint_club"),
+            -8.0: self._t("hint_hard"),
+            -7.0: self._t("hint_extreme"),
         }
-        self.target_hint_label.setText(hints.get(label, ""))
+        self.target_hint_label.setText(hints.get(target, ""))
 
     def _analysis_for_request(self, kind: str, input_file: str) -> SourceAnalysis | None:
         if kind != "optimize" or self.current_analysis is None:
@@ -1808,7 +2249,7 @@ class MainWindow(QMainWindow):
             self.render_progress_bar.setVisible(True)
             self.render_progress_bar.start_animation()
             self.render_work_pulse.start()
-            self.render_status_label.setText("Preparing render...")
+            self.render_status_label.setText(self._t("preparing_render"))
             self.cancel_render_button.setVisible(True)
             self.cancel_render_button.setEnabled(True)
             self._position_render_overlay()
@@ -1816,7 +2257,7 @@ class MainWindow(QMainWindow):
         else:
             self.progress_bar.setValue(0)
             self.progress_bar.setVisible(True)
-            self.status_label.setText("Preparing analysis...")
+            self.status_label.setText(self._t("preparing_analysis"))
         self._set_busy(True)
 
         self._thread = QThread(self)
@@ -1835,7 +2276,7 @@ class MainWindow(QMainWindow):
         if self._worker is None:
             return
         self.cancel_render_button.setEnabled(False)
-        self.render_status_label.setText("Cancelling after the current FFmpeg step...")
+        self.render_status_label.setText(self._t("cancelling"))
         self.render_overlay.set_message("Cancelling...")
         self._worker.cancel()
         self._sync_button_cursors()
@@ -1883,14 +2324,14 @@ class MainWindow(QMainWindow):
             self.quick_target_combo.setCurrentIndex(0)
             self.target_lufs_spin.setValue(recommended_lufs)
             self.target_hint_label.setText(
-                f"Auto recommendation: {recommended_lufs:.1f} LUFS because {lufs_reason}."
+                self._t("auto_recommendation", lufs=recommended_lufs, reason=lufs_reason)
             )
             self.source_box.setVisible(False)
-            self.source_review_button.setText("Review source analysis")
+            self.source_review_button.setText(self._t("review_source"))
             self._update_waveform_preview(result.source_path)
             self._clear_results()
             self.status_label.setText(
-                f"Step 2 complete. Suggested target: {recommended_lufs:.1f} LUFS ({lufs_reason})."
+                self._t("step2_complete", lufs=recommended_lufs, reason=lufs_reason)
             )
             self.progress_bar.setValue(100)
             self.workflow_tabs.setCurrentIndex(0)
@@ -1904,10 +2345,8 @@ class MainWindow(QMainWindow):
             if self.current_output_dir is not None:
                 self.history_store.append(result, self.current_output_dir)
             self._load_history()
-            self.status_label.setText(
-                "Step 3 complete. Step 4: select a candidate."
-            )
-            self.render_status_label.setText("Rendering complete. Review the recommended version.")
+            self.status_label.setText(self._t("step3_complete"))
+            self.render_status_label.setText(self._t("render_complete"))
             self.render_progress_bar.setValue(100)
             self.progress_bar.setValue(100)
             self.workflow_tabs.setCurrentIndex(1)
@@ -1915,21 +2354,21 @@ class MainWindow(QMainWindow):
     def _on_worker_failed(self, message: str) -> None:
         if "operation_cancelled" in message:
             if self._active_worker_kind == "optimize":
-                self.render_status_label.setText("Render cancelled. Adjust settings or create versions again.")
+                self.render_status_label.setText(self._t("render_cancelled"))
                 self.render_progress_bar.setValue(0)
-                self.render_overlay.set_message("Cancelled")
+                self.render_overlay.set_message(self._t("cancelled"))
             else:
-                self.status_label.setText("Analysis cancelled.")
+                self.status_label.setText(self._t("analysis_cancelled"))
                 self.progress_bar.setValue(0)
             return
         if self._active_worker_kind == "optimize":
             self.render_progress_bar.stop_animation()
             self.render_work_pulse.stop()
-            self.render_status_label.setText("Render failed. Check the error dialog for details.")
+            self.render_status_label.setText(self._t("render_failed"))
             self.render_progress_bar.setValue(0)
-            self.render_overlay.set_message("Render failed")
+            self.render_overlay.set_message(self._t("render_failed"))
         else:
-            self.status_label.setText("Task failed. Check the error dialog for details.")
+            self.status_label.setText(self._t("task_failed"))
             self.progress_bar.setValue(0)
         self._show_error(message)
 
