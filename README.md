@@ -61,60 +61,93 @@ OptiMaster/
     └── test_scoring.py
 ```
 
-## Installation
+## Installation (Windows-first)
 
 Python 3.11+ recommended.
 
-```bash
-pip install -e .
+1) Create and activate a virtual environment:
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 ```
 
-FFmpeg must be available on `PATH`.
-The GUI also requires `PySide6`, which is included in the project dependencies.
+2) Install FFmpeg and verify it is on `PATH`:
 
-Test:
-```bash
+```powershell
 ffmpeg -version
 ```
 
-## Quick start
+3) Install OptiMaster in editable mode:
 
-Analyze a file:
+```powershell
+python -m pip install -e .
+```
 
-```bash
+The GUI dependency (`PySide6`) is included in project dependencies.
+
+> If `pip install -e .` fails because of restricted network/proxy, use an environment
+> with internet access (or an internal package mirror), then rerun the same command.
+
+## Tutoriel — lancer l'application
+
+### 1) Lancer le CLI
+
+From the repository root (with your virtualenv active):
+
+```powershell
+optimaster --help
+```
+
+If entry points are not available in your shell, use module mode:
+
+```powershell
+python -m optimaster --help
+```
+
+### 2) Analyser un fichier audio
+
+```powershell
 optimaster analyze "C:\path\to\track.wav"
 ```
 
-Run the full optimization pipeline:
+### 3) Lancer une optimisation complète
 
-```bash
+```powershell
 optimaster optimize "C:\path\to\track.wav" --output-dir ".\renders"
 ```
 
-Choose the optimization mode:
+Modes available:
 
-```bash
+```powershell
 optimaster optimize "C:\path\to\track.wav" --mode safe
 optimaster optimize "C:\path\to\track.wav" --mode balanced
 optimaster optimize "C:\path\to\track.wav" --mode louder
 ```
 
-Show the built-in presets:
+### 4) Afficher les presets
 
-```bash
+```powershell
 optimaster presets
 ```
 
-Use a YAML config:
+### 5) Utiliser un fichier de config YAML
 
-```bash
+```powershell
 optimaster optimize "C:\path\to\track.wav" --config ".\config.example.yaml"
 ```
 
-Launch the desktop GUI:
+### 6) Lancer l'application desktop (GUI)
 
-```bash
+```powershell
 optimaster-gui
+```
+
+If needed, fallback to module mode:
+
+```powershell
+python -c "from optimaster.gui import run; raise SystemExit(run())"
 ```
 
 Current GUI v0 includes:
@@ -124,6 +157,22 @@ Current GUI v0 includes:
 - full optimization run with progress feedback
 - ranked candidate table with scoring reasons
 - export of the selected rendered candidate
+
+## Audit "install now" (snapshot: 2026-04-22)
+
+Checks run in this repository snapshot:
+
+- `pytest -q` fails if the package is not installed into the environment (`ModuleNotFoundError: optimaster`).
+- `PYTHONPATH=src pytest -q` passes (`4 passed`).
+- `PYTHONPATH=src python -m optimaster --help` works (CLI command tree is valid).
+- GUI import currently fails in this container because `PySide6` is not installed.
+- `ffmpeg -version` fails in this container because FFmpeg is missing from `PATH`.
+
+Interpretation for a real Windows install **right now**:
+- the codebase itself is testable and CLI-ready,
+- but a fresh machine still needs the runtime prerequisites installed successfully:
+  1) Python deps (`pip install -e .`),
+  2) FFmpeg in `PATH`.
 
 ## Built-in logic
 
