@@ -177,3 +177,40 @@ def test_optimize_writes_exports_and_progress(monkeypatch, tmp_path: Path):
     assert (output_dir / "ranking.json").exists()
     assert progress[0] == ("Starting optimization session", 0)
     assert progress[-1] == ("Optimization complete", 100)
+
+
+def test_optimize_applies_target_lufs_to_render_filter(monkeypatch, tmp_path: Path):
+    input_file = tmp_path / "input.wav"
+    input_file.write_bytes(b"stub")
+    output_dir = tmp_path / "renders"
+    metrics = LoudnessMetrics(-11.0, -1.3, 7.2, -20.2)
+    preset = CandidatePreset(
+        name="transparent_trim",
+        description="Transparent trim",
+        ffmpeg_filter="volume=-1.5dB",
+    )
+    render_filters: list[str] = []
+
+    monkeypatch.setattr("optimaster.service.validate_input_file", lambda _: input_file)
+    monkeypatch.setattr("optimaster.service.assert_ffmpeg_available", lambda _: None)
+    monkeypatch.setattr("optimaster.service.analyze_loudness", lambda *_args, **_kwargs: metrics)
+    monkeypatch.setattr("optimaster.service.classify_source", lambda *_: ("almost_ready", ["Stable profile"]))
+    monkeypatch.setattr("optimaster.service.select_presets_for_profile", lambda **_: [preset])
+    monkeypatch.setattr(
+        "optimaster.service.render_candidate",
+        lambda **kwargs: render_filters.append(kwargs["ffmpeg_filter"]),
+    )
+    monkeypatch.setattr("optimaster.service.score_candidate", lambda **_: (92.0, ["Good"]))
+    monkeypatch.setattr("optimaster.service.EngineService._write_exports", lambda *_args, **_kwargs: None)
+
+    EngineService(AppConfig()).optimize(
+        input_file=input_file,
+        output_dir=output_dir,
+        mode=OptimizationMode.LOUDER,
+        target_lufs=-8.0,
+    )
+
+    assert render_filters == [
+        "volume=-1.5dB,loudnorm=I=-8.0:TP=-0.8:LRA=7.0",
+        "volume=-1.5dB",
+    ]

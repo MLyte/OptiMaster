@@ -23,12 +23,26 @@ SUMMARY_RE = {
 SUPPORTED_EXTENSIONS = {".wav", ".flac"}
 
 
+def _subprocess_window_options() -> dict[str, object]:
+    if not hasattr(subprocess, "STARTUPINFO"):
+        return {}
+
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startupinfo.wShowWindow = subprocess.SW_HIDE
+    return {
+        "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        "startupinfo": startupinfo,
+    }
+
+
 def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         cmd,
         text=True,
         capture_output=True,
         check=False,
+        **_subprocess_window_options(),
     )
 
 

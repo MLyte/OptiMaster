@@ -45,7 +45,7 @@ Verification minimum post-build:
 ```bash
 python -m pip install -e .
 python -m pip install pyinstaller
-pyinstaller --noconfirm --windowed --name OptiMaster --collect-all PySide6 src/optimaster/__main__.py
+pyinstaller --noconfirm --windowed --name OptiMaster --icon src/optimaster/assets/optimaster_icon.ico --collect-all PySide6 src/optimaster/__main__.py
 ```
 
 ### Checklist release

@@ -3,10 +3,11 @@ from __future__ import annotations
 import shutil
 import sys
 from dataclasses import dataclass
+from importlib import resources
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QThread, Qt, QUrl, Signal
-from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent, QPixmap
+from PySide6.QtCore import QObject, QRectF, QThread, QTimer, Qt, QUrl, Signal
+from PySide6.QtGui import QAction, QColor, QDragEnterEvent, QDropEvent, QIcon, QPainter, QPixmap
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication,
@@ -27,6 +28,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QSizePolicy,
+    QDoubleSpinBox,
     QSpinBox,
     QTabWidget,
     QTableWidget,
@@ -44,6 +46,8 @@ from optimaster.service import EngineService
 
 
 APP_TITLE = "OptiMaster v0"
+APP_ICON = "optimaster_icon.ico"
+APP_ICON_FALLBACK = "optimaster_icon.svg"
 SUPPORTED_EXTENSIONS = {".wav", ".flac"}
 PRESET_DISPLAY_NAMES = {
     "do_almost_nothing": "Minimal touch",
@@ -58,6 +62,13 @@ def format_metric(value: float, unit: str) -> str:
     return f"{value:.1f} {unit}"
 
 
+def app_icon() -> QIcon:
+    icon_path = resources.files("optimaster.assets").joinpath(APP_ICON)
+    if not icon_path.is_file():
+        icon_path = resources.files("optimaster.assets").joinpath(APP_ICON_FALLBACK)
+    return QIcon(str(icon_path))
+
+
 @dataclass(slots=True)
 class WorkerRequest:
     kind: str
@@ -67,6 +78,7 @@ class WorkerRequest:
     config_path: str | None
     destination_profile: str
     strict_true_peak: bool
+    target_lufs: float | None
     source_analysis: SourceAnalysis | None = None
 
 
@@ -126,6 +138,7 @@ class EngineWorker(QObject):
                     source_analysis=self.request.source_analysis,
                     destination_profile=self.request.destination_profile,
                     strict_true_peak=self.request.strict_true_peak,
+                    target_lufs=self.request.target_lufs,
                     progress_callback=self._emit_progress,
                 )
             self.finished.emit(result)
@@ -138,10 +151,186 @@ class EngineWorker(QObject):
         self.progress.emit(message, percent)
 
 
+@dataclass(slots=True)
+class WaveformRequest:
+    source_path: Path
+    preview_path: Path
+    config_path: str | None
+
+
+class WaveformWorker(QObject):
+    finished = Signal(str, object)
+    failed = Signal(str)
+
+    def __init__(self, request: WaveformRequest) -> None:
+        super().__init__()
+        self.request = request
+
+    def run(self) -> None:
+        try:
+            config = load_config(self.request.config_path)
+            created = render_waveform_preview(
+                input_path=self.request.source_path,
+                output_path=self.request.preview_path,
+                ffmpeg_binary=config.ffmpeg_binary,
+            )
+            self.finished.emit(str(self.request.source_path), created)
+        except Exception:
+            self.failed.emit(str(self.request.source_path))
+
+
+class MetricCard(QFrame):
+    def __init__(self, title: str) -> None:
+        super().__init__()
+        self.setObjectName("metricCard")
+        layout = QGridLayout(self)
+        layout.setHorizontalSpacing(10)
+        layout.setVerticalSpacing(6)
+
+        self.title_label = QLabel(title)
+        self.title_label.setObjectName("metricTitle")
+
+        self.before_label = QLabel("--")
+        self.before_label.setObjectName("metricBefore")
+        self.after_label = QLabel("--")
+        self.after_label.setObjectName("metricAfter")
+        self.delta_label = QLabel("--")
+        self.delta_label.setObjectName("metricDelta")
+
+        self.bar = QProgressBar()
+        self.bar.setObjectName("deltaBar")
+        self.bar.setRange(0, 100)
+        self.bar.setValue(0)
+        self.bar.setTextVisible(False)
+
+        self.hint_label = QLabel("--")
+        self.hint_label.setObjectName("metricHint")
+        self.hint_label.setWordWrap(True)
+
+        layout.addWidget(self.title_label, 0, 0, 1, 2)
+        layout.addWidget(self.before_label, 1, 0)
+        layout.addWidget(self.after_label, 1, 1)
+        layout.addWidget(self.delta_label, 2, 1)
+        layout.addWidget(self.bar, 3, 0, 1, 2)
+        layout.addWidget(self.hint_label, 4, 0, 1, 2)
+
+    def set_values(self, before: str, after: str, delta: str, magnitude: int, hint: str) -> None:
+        self.before_label.setText(before)
+        self.after_label.setText(after)
+        self.delta_label.setText(delta)
+        self.bar.setValue(max(0, min(magnitude, 100)))
+        self.hint_label.setText(hint)
+
+
+class PlaybackWaveform(QFrame):
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName("playbackWaveform")
+        self.setMinimumHeight(150)
+        self._label = "No audio playing"
+        self._path = ""
+        self._bars = self._make_bars("")
+        self._position = 0
+        self._duration = 0
+        self._is_playing = False
+        self._phase = 0
+        self._timer = QTimer(self)
+        self._timer.setInterval(80)
+        self._timer.timeout.connect(self._tick)
+
+    def set_track(self, path: Path, label: str) -> None:
+        self._path = str(path)
+        self._label = label
+        self._bars = self._make_bars(self._path)
+        self._position = 0
+        self._duration = 0
+        self._is_playing = True
+        self._timer.start()
+        self.update()
+
+    def set_position(self, position: int) -> None:
+        self._position = max(position, 0)
+        self.update()
+
+    def set_duration(self, duration: int) -> None:
+        self._duration = max(duration, 0)
+        self.update()
+
+    def stop(self) -> None:
+        self._is_playing = False
+        self._timer.stop()
+        self.update()
+
+    def clear(self) -> None:
+        self._label = "No audio playing"
+        self._path = ""
+        self._position = 0
+        self._duration = 0
+        self._is_playing = False
+        self._timer.stop()
+        self.update()
+
+    def _tick(self) -> None:
+        self._phase = (self._phase + 1) % 1000
+        self.update()
+
+    def _make_bars(self, key: str) -> list[float]:
+        seed = sum((idx + 1) * ord(char) for idx, char in enumerate(key or "optimaster"))
+        bars: list[float] = []
+        value = seed or 1
+        for idx in range(88):
+            value = (value * 1103515245 + 12345 + idx) & 0x7FFFFFFF
+            base = 0.18 + (value % 100) / 160
+            pulse = 0.18 * (1 + ((idx * 7 + seed) % 9)) / 9
+            bars.append(min(base + pulse, 0.95))
+        return bars
+
+    def paintEvent(self, event: object) -> None:
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        rect = self.rect().adjusted(14, 12, -14, -12)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor("#10151b"))
+        painter.drawRoundedRect(rect, 10, 10)
+
+        painter.setPen(QColor("#b9c6ce"))
+        painter.drawText(rect.adjusted(12, 8, -12, -8), Qt.AlignmentFlag.AlignTop, self._label)
+
+        bars_rect = rect.adjusted(12, 38, -12, -14)
+        if not self._bars:
+            return
+
+        progress = self._position / self._duration if self._duration else 0.0
+        progress = max(0.0, min(progress, 1.0))
+        bar_gap = 3
+        bar_width = max(3, int((bars_rect.width() - bar_gap * (len(self._bars) - 1)) / len(self._bars)))
+        center_y = bars_rect.center().y()
+        max_height = bars_rect.height() * 0.82
+
+        for idx, amplitude in enumerate(self._bars):
+            x = bars_rect.left() + idx * (bar_width + bar_gap)
+            animated = amplitude
+            if self._is_playing:
+                animated += 0.08 * (((idx + self._phase) % 12) / 12)
+            height = max(8, min(max_height, max_height * animated))
+            y = center_y - height / 2
+            played = idx / max(len(self._bars) - 1, 1) <= progress
+            color = QColor("#2ac6a8" if played else "#2d3a45")
+            painter.setBrush(color)
+            painter.drawRoundedRect(QRectF(x, y, bar_width, height), 3, 3)
+
+        playhead_x = bars_rect.left() + bars_rect.width() * progress
+        painter.setBrush(QColor("#e5b94d"))
+        painter.drawRoundedRect(QRectF(playhead_x - 2, bars_rect.top(), 4, bars_rect.height()), 2, 2)
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(APP_TITLE)
+        self.setWindowIcon(app_icon())
         self.resize(1220, 860)
 
         self.current_analysis: SourceAnalysis | None = None
@@ -155,6 +344,9 @@ class MainWindow(QMainWindow):
         }
         self._thread: QThread | None = None
         self._worker: EngineWorker | None = None
+        self._waveform_thread: QThread | None = None
+        self._waveform_worker: WaveformWorker | None = None
+        self._pending_waveform_source: Path | None = None
         self.history_store = SessionHistoryStore()
         self.audio_player = QMediaPlayer(self)
         self.audio_output = QAudioOutput(self)
@@ -224,6 +416,7 @@ class MainWindow(QMainWindow):
         self.input_edit.setPlaceholderText(r"C:\path\to\track.wav")
         self.input_edit.textChanged.connect(self._update_actions)
         browse_button = QPushButton("1. Choose file")
+        browse_button.setObjectName("secondaryAction")
         browse_button.clicked.connect(self._browse_input_file)
         row.addWidget(self.input_edit, stretch=1)
         row.addWidget(browse_button)
@@ -253,39 +446,53 @@ class MainWindow(QMainWindow):
             self.destination_combo.addItem(label, value)
         self.strict_tp_checkbox = QCheckBox("True peak strict (safer after encoding)")
         self.strict_tp_checkbox.setChecked(True)
+        self.target_lufs_spin = QDoubleSpinBox()
+        self.target_lufs_spin.setRange(-18.0, -6.0)
+        self.target_lufs_spin.setDecimals(1)
+        self.target_lufs_spin.setSingleStep(0.5)
+        self.target_lufs_spin.setValue(-9.0)
+        self.target_lufs_spin.setSuffix(" LUFS")
+        self.target_lufs_spin.setToolTip("Target loudness for rendered candidates. Higher, closer to zero, sounds louder.")
 
         output_button = QPushButton("Choose output")
+        output_button.setObjectName("utilityAction")
         output_button.clicked.connect(self._browse_output_dir)
         config_button = QPushButton("Load config")
+        config_button.setObjectName("utilityAction")
         config_button.clicked.connect(self._browse_config_file)
 
         self.analyze_button = QPushButton("2. Analyze source")
         self.optimize_button = QPushButton("3. Render candidates")
         self.export_button = QPushButton("6. Export selected candidate")
+        self.analyze_button.setObjectName("stepAction")
+        self.optimize_button.setObjectName("stepAction")
+        self.export_button.setObjectName("primaryAction")
         self.analyze_button.clicked.connect(self._run_analyze)
         self.optimize_button.clicked.connect(self._run_optimize)
         self.export_button.clicked.connect(self._export_selected_candidate)
 
         layout.addWidget(QLabel("Optimization mode"), 0, 0)
         layout.addWidget(self.mode_combo, 0, 1)
+        layout.addWidget(QLabel("Target LUFS"), 0, 2)
+        layout.addWidget(self.target_lufs_spin, 0, 3)
         layout.addWidget(QLabel("Destination profile"), 1, 0)
         layout.addWidget(self.destination_combo, 1, 1)
-        layout.addWidget(self.strict_tp_checkbox, 1, 2)
+        layout.addWidget(self.strict_tp_checkbox, 1, 2, 1, 2)
         layout.addWidget(QLabel("Output folder"), 2, 0)
-        layout.addWidget(self.output_edit, 2, 1)
-        layout.addWidget(output_button, 2, 2)
+        layout.addWidget(self.output_edit, 2, 1, 1, 2)
+        layout.addWidget(output_button, 2, 3, Qt.AlignmentFlag.AlignRight)
         layout.addWidget(QLabel("Config file"), 3, 0)
-        layout.addWidget(self.config_edit, 3, 1)
-        layout.addWidget(config_button, 3, 2)
+        layout.addWidget(self.config_edit, 3, 1, 1, 2)
+        layout.addWidget(config_button, 3, 3, Qt.AlignmentFlag.AlignRight)
         layout.addWidget(self.analyze_button, 4, 0)
-        layout.addWidget(self.optimize_button, 4, 1, 1, 2)
+        layout.addWidget(self.optimize_button, 4, 1, 1, 3)
 
         self.status_label = QLabel("Step 1: choose a source file to begin.")
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
-        layout.addWidget(self.status_label, 5, 0, 1, 2)
-        layout.addWidget(self.progress_bar, 5, 2)
+        layout.addWidget(self.status_label, 5, 0, 1, 3)
+        layout.addWidget(self.progress_bar, 5, 3)
         return box
 
     def _build_source_analysis(self) -> QGroupBox:
@@ -334,6 +541,7 @@ class MainWindow(QMainWindow):
         self.listen_selected_button = QPushButton("5. Listen to selected version")
         self.listen_selected_button.clicked.connect(lambda: self.workflow_tabs.setCurrentIndex(2))
         self.save_note_button = QPushButton("5C. Save listening note")
+        self.save_note_button.setObjectName("secondaryAction")
         self.save_note_button.clicked.connect(self._save_listening_note)
         best_layout.addRow("Chosen version", self.best_labels["name"])
         best_layout.addRow("Score", self.best_labels["score"])
@@ -346,13 +554,16 @@ class MainWindow(QMainWindow):
         return self.best_box
 
     def _build_listening_tools(self) -> QGroupBox:
-        box = QGroupBox("5-6. A/B listening and export")
+        box = QGroupBox("5-6. Compare and export")
         layout = QVBoxLayout(box)
 
         listening_row = QHBoxLayout()
         self.play_source_button = QPushButton("5A. Play source (A)")
         self.play_candidate_button = QPushButton("5B. Play selected candidate (B)")
         self.stop_audio_button = QPushButton("Stop")
+        self.play_source_button.setObjectName("secondaryAction")
+        self.play_candidate_button.setObjectName("secondaryAction")
+        self.stop_audio_button.setObjectName("secondaryAction")
         self.play_source_button.clicked.connect(self._play_source)
         self.play_candidate_button.clicked.connect(self._play_selected_candidate)
         self.stop_audio_button.clicked.connect(self._stop_playback)
@@ -363,15 +574,30 @@ class MainWindow(QMainWindow):
 
         self.playback_label = QLabel("Step 5: select a candidate, then compare A and B.")
         self.playback_label.setWordWrap(True)
+        self.playback_waveform = PlaybackWaveform()
+        self.audio_player.positionChanged.connect(self.playback_waveform.set_position)
+        self.audio_player.durationChanged.connect(self.playback_waveform.set_duration)
 
-        self.before_after_table = QTableWidget(4, 4)
-        self.before_after_table.setHorizontalHeaderLabels(["Metric", "Before", "After", "Change"])
-        self.before_after_table.setVerticalHeaderLabels([])
-        self.before_after_table.setAlternatingRowColors(True)
-        self.before_after_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.before_after_table.verticalHeader().setVisible(False)
-        self.before_after_table.horizontalHeader().setStretchLastSection(True)
-        self.before_after_table.setMaximumHeight(180)
+        self.before_after_panel = QFrame()
+        self.before_after_panel.setObjectName("beforeAfterPanel")
+        before_after_layout = QGridLayout(self.before_after_panel)
+        before_after_layout.setSpacing(10)
+        before_label = QLabel("AVANT")
+        before_label.setObjectName("comparisonColumnTitle")
+        after_label = QLabel("APRES")
+        after_label.setObjectName("comparisonColumnTitle")
+        before_after_layout.addWidget(before_label, 0, 0)
+        before_after_layout.addWidget(after_label, 0, 1)
+        self.metric_cards = {
+            "loudness": MetricCard("LUFS"),
+            "peak": MetricCard("True peak"),
+            "lra": MetricCard("Dynamics"),
+            "score": MetricCard("Decision score"),
+        }
+        before_after_layout.addWidget(self.metric_cards["loudness"], 1, 0, 1, 2)
+        before_after_layout.addWidget(self.metric_cards["peak"], 2, 0, 1, 2)
+        before_after_layout.addWidget(self.metric_cards["lra"], 3, 0, 1, 2)
+        before_after_layout.addWidget(self.metric_cards["score"], 4, 0, 1, 2)
         self._clear_before_after()
 
         self.history_table = QTableWidget(0, 5)
@@ -381,10 +607,16 @@ class MainWindow(QMainWindow):
         self.history_table.verticalHeader().setVisible(False)
         self.history_table.horizontalHeader().setStretchLastSection(True)
         self.history_table.setMaximumHeight(170)
+        self.history_table.setVisible(False)
+        self.history_button = QPushButton("Show session history")
+        self.history_button.setObjectName("secondaryAction")
+        self.history_button.clicked.connect(self._toggle_history)
 
         layout.addLayout(listening_row)
+        layout.addWidget(self.playback_waveform)
         layout.addWidget(self.playback_label)
-        layout.addWidget(self.before_after_table)
+        layout.addWidget(self.before_after_panel)
+        layout.addWidget(self.history_button)
         layout.addWidget(self.history_table)
         return box
 
@@ -432,98 +664,199 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(
             """
             QWidget {
-                background: #12161c;
-                color: #eef4f7;
+                background: #0f172a;
+                color: #f8fafc;
                 font-size: 13px;
             }
-            QMainWindow, QMenuBar, QMenu, QGroupBox, QPlainTextEdit, QTableWidget, QLineEdit, QComboBox, QProgressBar {
-                background: #12161c;
+            QMainWindow, QMenuBar, QMenu {
+                background: #0f172a;
+            }
+            QMenuBar::item:selected, QMenu::item:selected {
+                background: #1e293b;
+                border-radius: 6px;
             }
             QTabWidget::pane {
                 border: 0;
-                padding-top: 8px;
+                padding-top: 10px;
             }
             QTabBar::tab {
-                background: #18212a;
-                color: #91a0ab;
-                border: 1px solid #2b353f;
+                background: #111827;
+                color: #94a3b8;
+                border: 1px solid #334155;
                 border-bottom: 0;
-                padding: 10px 18px;
+                padding: 11px 20px;
                 min-width: 150px;
             }
             QTabBar::tab:selected {
-                background: #1f8f7b;
-                color: #061615;
+                background: #2563eb;
+                color: #ffffff;
                 font-weight: 700;
             }
             QTabBar::tab:disabled {
-                color: #53616b;
+                color: #64748b;
             }
             QGroupBox {
-                border: 1px solid #2b353f;
-                border-radius: 10px;
+                background: #111827;
+                border: 1px solid #334155;
+                border-radius: 8px;
                 margin-top: 12px;
-                padding-top: 14px;
+                padding-top: 16px;
                 font-weight: 600;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
                 left: 12px;
-                padding: 0 4px;
-                color: #7fd7c4;
+                padding: 0 6px;
+                color: #38bdf8;
             }
             #dropFrame {
-                border: 2px dashed #3f5566;
-                border-radius: 14px;
-                background: #18212a;
+                border: 2px dashed #475569;
+                border-radius: 8px;
+                background: #0b1220;
             }
             #heroTitle {
                 font-size: 21px;
                 font-weight: 700;
-                color: #f8fafb;
+                color: #f8fafc;
             }
             #waveformPreview {
-                border: 1px solid #31404b;
+                border: 1px solid #334155;
                 border-radius: 8px;
-                background: #18212a;
-                color: #91a0ab;
+                background: #0b1220;
+                color: #94a3b8;
                 padding: 6px;
             }
+            #playbackWaveform {
+                border: 1px solid #334155;
+                border-radius: 8px;
+                background: #0b1220;
+            }
+            #beforeAfterPanel {
+                border: 1px solid #334155;
+                border-radius: 8px;
+                background: #0b1220;
+                padding: 8px;
+            }
+            #metricCard {
+                border: 1px solid #334155;
+                border-radius: 8px;
+                background: #111827;
+                padding: 10px;
+            }
+            #metricTitle {
+                color: #38bdf8;
+                font-weight: 700;
+            }
+            #comparisonColumnTitle {
+                color: #cbd5e1;
+                font-weight: 700;
+                padding: 4px 8px;
+            }
+            #metricBefore, #metricAfter {
+                background: #0f172a;
+                border-radius: 6px;
+                padding: 8px;
+                font-size: 15px;
+                font-weight: 700;
+            }
+            #metricDelta {
+                color: #f59e0b;
+                font-size: 18px;
+                font-weight: 700;
+            }
+            #metricHint {
+                color: #cbd5e1;
+            }
+            #deltaBar {
+                min-height: 8px;
+                max-height: 8px;
+                border-radius: 4px;
+                text-align: center;
+            }
+            #deltaBar::chunk {
+                background: #f59e0b;
+                border-radius: 4px;
+            }
             QPushButton {
-                background: #1f8f7b;
+                background: #2563eb;
                 border: 0;
                 border-radius: 8px;
                 padding: 10px 14px;
-                color: #061615;
+                color: #ffffff;
                 font-weight: 700;
             }
             QPushButton:hover {
-                background: #28a48f;
+                background: #1d4ed8;
             }
             QPushButton:disabled {
-                background: #3c4b56;
-                color: #91a0ab;
+                background: #334155;
+                color: #94a3b8;
             }
-            QLineEdit, QComboBox, QPlainTextEdit, QTableWidget, QSpinBox {
-                border: 1px solid #31404b;
+            #primaryAction {
+                background: #2563eb;
+                color: #ffffff;
+            }
+            #primaryAction:hover {
+                background: #1d4ed8;
+            }
+            #secondaryAction {
+                background: #1e293b;
+                border: 1px solid #334155;
+                color: #e2e8f0;
+            }
+            #secondaryAction:hover {
+                background: #334155;
+            }
+            #stepAction {
+                background: #2563eb;
+                color: #ffffff;
+                min-height: 18px;
+            }
+            #stepAction:hover {
+                background: #1d4ed8;
+            }
+            #stepAction:disabled {
+                background: #334155;
+                color: #94a3b8;
+            }
+            #utilityAction {
+                background: transparent;
+                border: 1px solid #475569;
+                color: #cbd5e1;
+                padding: 7px 10px;
+                min-width: 112px;
+                max-width: 132px;
+                font-weight: 600;
+            }
+            #utilityAction:hover {
+                background: #1e293b;
+                border-color: #64748b;
+            }
+            QLineEdit, QComboBox, QPlainTextEdit, QTableWidget, QSpinBox, QDoubleSpinBox {
+                border: 1px solid #334155;
                 border-radius: 8px;
                 padding: 8px;
-                background: #18212a;
-                selection-background-color: #1f8f7b;
+                background: #0f172a;
+                selection-background-color: #2563eb;
             }
             QHeaderView::section {
-                background: #1d2831;
-                color: #eef4f7;
+                background: #1e293b;
+                color: #f8fafc;
                 border: 0;
                 padding: 8px;
             }
+            QTableWidget::item:selected {
+                background: #2563eb;
+                color: #ffffff;
+            }
             QProgressBar {
-                border: 1px solid #31404b;
+                border: 1px solid #334155;
                 border-radius: 7px;
                 text-align: center;
+                background: #0f172a;
             }
             QProgressBar::chunk {
-                background: #e5b94d;
+                background: #38bdf8;
                 border-radius: 7px;
             }
             """
@@ -603,6 +936,7 @@ class MainWindow(QMainWindow):
             config_path=config_path,
             destination_profile=self.destination_combo.currentData(),
             strict_true_peak=self.strict_tp_checkbox.isChecked(),
+            target_lufs=self.target_lufs_spin.value(),
             source_analysis=source_analysis,
         )
 
@@ -696,7 +1030,7 @@ class MainWindow(QMainWindow):
         self.results_table.setRowCount(len(session.candidates))
         for row, candidate in enumerate(session.candidates):
             values = [
-                "Recommended" if row == 0 else "Alternative",
+                "Recommended" if row == 0 else self._candidate_choice_label(candidate),
                 self._candidate_version_label(candidate),
                 f"{candidate.score:.1f}",
                 f"{candidate.output_metrics.integrated_lufs:.1f}",
@@ -796,14 +1130,19 @@ class MainWindow(QMainWindow):
         return item.data(Qt.ItemDataRole.UserRole)
 
     def _candidate_choice_label(self, candidate: CandidateResult) -> str:
+        if candidate.preset.name.endswith("_optimaster"):
+            return "OptiMaster technical choice"
         if self.current_session and self.current_session.candidates:
             if self.current_session.candidates[0] is candidate:
                 return "Recommended by OptiMaster"
-        return "Alternative version"
+        return "Your LUFS target"
 
     def _candidate_version_label(self, candidate: CandidateResult) -> str:
         rank = self._candidate_rank(candidate)
-        name = PRESET_DISPLAY_NAMES.get(candidate.preset.name, candidate.preset.name.replace("_", " ").title())
+        preset_name = candidate.preset.name.removesuffix("_optimaster")
+        name = PRESET_DISPLAY_NAMES.get(preset_name, preset_name.replace("_", " ").title())
+        if candidate.preset.name.endswith("_optimaster"):
+            name = f"{name} - OptiMaster choice"
         if rank is None:
             return name
         return f"Version {rank}: {name}"
@@ -817,47 +1156,49 @@ class MainWindow(QMainWindow):
         return None
 
     def _clear_before_after(self) -> None:
-        rows = [
-            ("Integrated loudness", "--", "--", "--"),
-            ("True peak", "--", "--", "--"),
-            ("Dynamic range (LRA)", "--", "--", "--"),
-            ("Score", "--", "--", "--"),
-        ]
-        self._set_before_after_rows(rows)
+        self.metric_cards["loudness"].set_values("--", "--", "--", 0, "Select a version to see loudness change.")
+        self.metric_cards["peak"].set_values("--", "--", "--", 0, "Peak safety appears here.")
+        self.metric_cards["lra"].set_values("--", "--", "--", 0, "Dynamics change appears here.")
+        self.metric_cards["score"].set_values("--", "--", "--", 0, "OptiMaster decision score appears here.")
 
     def _populate_before_after(self, candidate: CandidateResult) -> None:
         source = candidate.source_metrics
         output = candidate.output_metrics
-        rows = [
-            (
-                "Integrated loudness",
-                format_metric(source.integrated_lufs, "LUFS"),
-                format_metric(output.integrated_lufs, "LUFS"),
-                f"{output.integrated_lufs - source.integrated_lufs:+.1f} LUFS",
-            ),
-            (
-                "True peak",
-                format_metric(source.true_peak_dbtp, "dBTP"),
-                format_metric(output.true_peak_dbtp, "dBTP"),
-                f"{output.true_peak_dbtp - source.true_peak_dbtp:+.1f} dB",
-            ),
-            (
-                "Dynamic range (LRA)",
-                format_metric(source.lra_lu, "LU"),
-                format_metric(output.lra_lu, "LU"),
-                f"{output.lra_lu - source.lra_lu:+.1f} LU",
-            ),
-            ("Score", "--", f"{candidate.score:.1f}", "Ranked by safety, loudness, and dynamics"),
-        ]
-        self._set_before_after_rows(rows)
+        loudness_delta = output.integrated_lufs - source.integrated_lufs
+        peak_delta = output.true_peak_dbtp - source.true_peak_dbtp
+        lra_delta = output.lra_lu - source.lra_lu
 
-    def _set_before_after_rows(self, rows: list[tuple[str, str, str, str]]) -> None:
-        self.before_after_table.setRowCount(len(rows))
-        for row, values in enumerate(rows):
-            for col, value in enumerate(values):
-                item = QTableWidgetItem(value)
-                self.before_after_table.setItem(row, col, item)
-        self.before_after_table.resizeColumnsToContents()
+        self.metric_cards["loudness"].set_values(
+            format_metric(source.integrated_lufs, "LUFS"),
+            format_metric(output.integrated_lufs, "LUFS"),
+            f"{loudness_delta:+.1f} LUFS",
+            self._delta_magnitude(loudness_delta, 6.0),
+            "Louder" if loudness_delta > 0 else "Quieter" if loudness_delta < 0 else "Same loudness",
+        )
+        self.metric_cards["peak"].set_values(
+            format_metric(source.true_peak_dbtp, "dBTP"),
+            format_metric(output.true_peak_dbtp, "dBTP"),
+            f"{peak_delta:+.1f} dB",
+            self._delta_magnitude(peak_delta, 4.0),
+            "More headroom" if peak_delta < 0 else "Hotter peak" if peak_delta > 0 else "Same peak",
+        )
+        self.metric_cards["lra"].set_values(
+            format_metric(source.lra_lu, "LU"),
+            format_metric(output.lra_lu, "LU"),
+            f"{lra_delta:+.1f} LU",
+            self._delta_magnitude(lra_delta, 4.0),
+            "More dynamic" if lra_delta > 0 else "Tighter" if lra_delta < 0 else "Dynamics preserved",
+        )
+        self.metric_cards["score"].set_values(
+            "--",
+            f"{candidate.score:.1f}",
+            "Recommended" if self._candidate_rank(candidate) == 1 else "Alternative",
+            int(round(candidate.score)),
+            "Combines safety, loudness, and dynamics.",
+        )
+
+    def _delta_magnitude(self, delta: float, full_scale: float) -> int:
+        return int(round(min(abs(delta) / full_scale, 1.0) * 100))
 
     def _export_selected_candidate(self) -> None:
         candidate = self._selected_candidate()
@@ -904,30 +1245,87 @@ class MainWindow(QMainWindow):
         self.status_label.setText(f"Saved note for {candidate.preset.name} in {preferences_path}")
 
     def _update_waveform_preview(self, source_path: Path) -> None:
-        try:
-            preview_dir = Path(self.output_edit.text().strip() or source_path.parent / "renders")
-            preview_path = preview_dir / f"{source_path.stem}_waveform.png"
-            config = load_config(self.config_edit.text().strip() or None)
-            created = render_waveform_preview(
-                input_path=source_path,
-                output_path=preview_path,
-                ffmpeg_binary=config.ffmpeg_binary,
+        self.waveform_label.setPixmap(QPixmap())
+        self.waveform_label.setText("Loading waveform preview...")
+        self.status_label.setText("Loading source preview...")
+        self.progress_bar.setRange(0, 0)
+
+        if self._waveform_thread is not None:
+            self._pending_waveform_source = source_path
+            return
+
+        preview_dir = Path(self.output_edit.text().strip() or source_path.parent / "renders")
+        request = WaveformRequest(
+            source_path=source_path,
+            preview_path=preview_dir / f"{source_path.stem}_waveform.png",
+            config_path=self.config_edit.text().strip() or None,
+        )
+        self._waveform_thread = QThread(self)
+        self._waveform_worker = WaveformWorker(request)
+        self._waveform_worker.moveToThread(self._waveform_thread)
+        self._waveform_thread.started.connect(self._waveform_worker.run)
+        self._waveform_worker.finished.connect(self._on_waveform_ready)
+        self._waveform_worker.failed.connect(self._on_waveform_failed)
+        self._waveform_worker.finished.connect(self._cleanup_waveform_worker)
+        self._waveform_worker.failed.connect(self._cleanup_waveform_worker)
+        self._waveform_thread.start()
+
+    def _on_waveform_ready(self, source_path: str, created: object) -> None:
+        current_input = self.input_edit.text().strip()
+        if not current_input or Path(current_input).resolve() != Path(source_path):
+            return
+
+        created_path = Path(created)
+        self.waveform_preview_path = created_path
+        pixmap = QPixmap(str(created_path))
+        self.waveform_label.setPixmap(
+            pixmap.scaled(
+                max(self.waveform_label.width(), 260),
+                130,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
             )
-            self.waveform_preview_path = created
-            pixmap = QPixmap(str(created))
-            self.waveform_label.setPixmap(
-                pixmap.scaled(
-                    max(self.waveform_label.width(), 260),
-                    130,
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
-                )
-            )
-            self.waveform_label.setText("")
-        except Exception:
-            self.waveform_preview_path = None
-            self.waveform_label.setPixmap(QPixmap())
-            self.waveform_label.setText("Waveform preview unavailable for this file.")
+        )
+        self.waveform_label.setText("")
+        self._finish_waveform_loading(source_path)
+
+    def _on_waveform_failed(self, source_path: str) -> None:
+        current_input = self.input_edit.text().strip()
+        if not current_input or Path(current_input).resolve() != Path(source_path):
+            return
+
+        self.waveform_preview_path = None
+        self.waveform_label.setPixmap(QPixmap())
+        self.waveform_label.setText("Waveform preview unavailable for this file.")
+        self._finish_waveform_loading(source_path)
+
+    def _finish_waveform_loading(self, source_path: str) -> None:
+        if self._thread is not None:
+            return
+
+        self.progress_bar.setRange(0, 100)
+        current_path = Path(source_path)
+        if self.current_analysis is not None and self.current_analysis.source_path == current_path:
+            self.status_label.setText("Step 2 complete. Step 3: render candidates.")
+            self.progress_bar.setValue(100)
+            return
+
+        self.status_label.setText("Step 1 complete. Step 2: analyze the source.")
+        self.progress_bar.setValue(0)
+
+    def _cleanup_waveform_worker(self) -> None:
+        if self._waveform_thread is None or self._waveform_worker is None:
+            return
+        self._waveform_thread.quit()
+        self._waveform_thread.wait()
+        self._waveform_worker.deleteLater()
+        self._waveform_thread.deleteLater()
+        self._waveform_thread = None
+        self._waveform_worker = None
+        if self._pending_waveform_source is not None:
+            pending_source = self._pending_waveform_source
+            self._pending_waveform_source = None
+            self._update_waveform_preview(pending_source)
 
     def _clear_results(self) -> None:
         self.results_table.setRowCount(0)
@@ -955,6 +1353,11 @@ class MainWindow(QMainWindow):
                 self.history_table.setItem(row, col, QTableWidgetItem(value))
         self.history_table.resizeColumnsToContents()
 
+    def _toggle_history(self) -> None:
+        visible = self.history_table.isHidden()
+        self.history_table.setVisible(visible)
+        self.history_button.setText("Hide session history" if visible else "Show session history")
+
     def _play_source(self) -> None:
         input_path = self.input_edit.text().strip()
         if not input_path:
@@ -977,11 +1380,13 @@ class MainWindow(QMainWindow):
         self.audio_player.setSource(QUrl.fromLocalFile(str(path)))
         self.audio_player.play()
         self.current_playback = str(path)
+        self.playback_waveform.set_track(path, f"Now playing {label}: {path.name}")
         self.playback_label.setText(f"Now playing {label}: {path.name}")
 
     def _stop_playback(self) -> None:
         self.audio_player.stop()
         self.current_playback = None
+        self.playback_waveform.stop()
         self.playback_label.setText("Playback stopped.")
 
     def _set_busy(self, busy: bool) -> None:
@@ -995,6 +1400,7 @@ class MainWindow(QMainWindow):
         self.mode_combo.setDisabled(busy)
         self.destination_combo.setDisabled(busy)
         self.strict_tp_checkbox.setDisabled(busy)
+        self.target_lufs_spin.setDisabled(busy)
         self.input_edit.setDisabled(busy)
         self.output_edit.setDisabled(busy)
         self.config_edit.setDisabled(busy)
@@ -1026,6 +1432,7 @@ class MainWindow(QMainWindow):
 def run() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName(APP_TITLE)
+    app.setWindowIcon(app_icon())
     window = MainWindow()
     window.show()
     return app.exec()

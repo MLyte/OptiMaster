@@ -9,6 +9,7 @@ from typing import Callable
 from optimaster.config import AppConfig
 from optimaster.ffmpeg import analyze_loudness, assert_ffmpeg_available, render_candidate, validate_input_file
 from optimaster.models import (
+    CandidatePreset,
     CandidateResult,
     OptimizationMode,
     OptimizationSession,
@@ -97,10 +98,12 @@ class EngineService:
         source_analysis: SourceAnalysis | None = None,
         destination_profile: str = "streaming_prudent",
         strict_true_peak: bool = False,
+        target_lufs: float | None = None,
         progress_callback: ProgressCallback | None = None,
     ) -> OptimizationSession:
         selected_mode = mode or self.config.default_mode
-        scoring_cfg = self._runtime_scoring_config(destination_profile, strict_true_peak)
+        scoring_cfg = self._runtime_scoring_config(destination_profile, strict_true_peak, target_lufs)
+        fallback_scoring_cfg = self._runtime_scoring_config(destination_profile, strict_true_peak)
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -125,18 +128,19 @@ class EngineService:
         preference_path = self.preference_path or (out_dir / "preferences.json")
         preset_bias = PreferenceStore(preference_path).load()
 
+        render_jobs = self._render_jobs(presets, target_lufs, scoring_cfg, fallback_scoring_cfg)
         results: list[CandidateResult] = []
-        total_presets = max(len(presets), 1)
-        for idx, preset in enumerate(presets, start=1):
-            render_progress = 45 + int(((idx - 1) / total_presets) * 40)
-            analyze_progress = 55 + int(((idx - 1) / total_presets) * 40)
-            score_progress = 65 + int(((idx - 1) / total_presets) * 35)
+        total_jobs = max(len(render_jobs), 1)
+        for idx, (preset, render_target_lufs, job_scoring_cfg) in enumerate(render_jobs, start=1):
+            render_progress = 45 + int(((idx - 1) / total_jobs) * 40)
+            analyze_progress = 55 + int(((idx - 1) / total_jobs) * 40)
+            score_progress = 65 + int(((idx - 1) / total_jobs) * 35)
             self._notify(progress_callback, f"Rendering {preset.name}", render_progress)
             output_path = out_dir / preset.output_name(analysis.source_path, suffix=f".{self.config.output_format}")
             render_candidate(
                 input_path=analysis.source_path,
                 output_path=output_path,
-                ffmpeg_filter=preset.ffmpeg_filter,
+                ffmpeg_filter=self._render_filter(preset.ffmpeg_filter, job_scoring_cfg, render_target_lufs),
                 ffmpeg_binary=self.config.ffmpeg_binary,
             )
             self._notify(progress_callback, f"Measuring {preset.name}", analyze_progress)
@@ -144,10 +148,14 @@ class EngineService:
             self._notify(progress_callback, f"Scoring {preset.name}", score_progress)
             score, reasons = score_candidate(
                 metrics=output_metrics,
-                cfg=scoring_cfg,
+                cfg=job_scoring_cfg,
                 source_metrics=analysis.metrics,
                 mode=selected_mode,
             )
+            if target_lufs is not None and render_target_lufs is None:
+                reasons.append("OptiMaster fallback: ranked without forcing the requested LUFS target.")
+            elif target_lufs is not None:
+                reasons.append(f"User target render: aimed at {target_lufs:.1f} LUFS.")
             bias = preset_bias.get(preset.name, 0.0)
             if abs(bias) > 0:
                 score += bias
@@ -181,11 +189,22 @@ class EngineService:
         assert_ffmpeg_available(self.config.ffmpeg_binary)
         self._ffmpeg_checked = True
 
-    def _runtime_scoring_config(self, destination_profile: str, strict_true_peak: bool):
+    def _runtime_scoring_config(
+        self,
+        destination_profile: str,
+        strict_true_peak: bool,
+        target_lufs: float | None = None,
+    ):
         scoring_cfg = self.config.scoring
         overrides = DESTINATION_SCORING_OVERRIDES.get(destination_profile, {})
         if overrides:
             scoring_cfg = replace(scoring_cfg, **overrides)
+        if target_lufs is not None:
+            scoring_cfg = replace(
+                scoring_cfg,
+                target_lufs_min=target_lufs - 0.5,
+                target_lufs_max=target_lufs + 0.5,
+            )
         if strict_true_peak:
             strict_ideal = min(scoring_cfg.ideal_true_peak_max, -1.2)
             strict_hard = min(scoring_cfg.hard_true_peak_max, -1.0)
@@ -195,6 +214,37 @@ class EngineService:
                 hard_true_peak_max=strict_hard,
             )
         return scoring_cfg
+
+    def _render_filter(self, preset_filter: str, scoring_cfg, target_lufs: float | None) -> str:
+        if target_lufs is None:
+            return preset_filter
+        return (
+            f"{preset_filter},"
+            f"loudnorm=I={target_lufs:.1f}:"
+            f"TP={scoring_cfg.hard_true_peak_max:.1f}:"
+            f"LRA={max(scoring_cfg.preferred_lra_min, 7.0):.1f}"
+        )
+
+    def _render_jobs(
+        self,
+        presets: list[CandidatePreset],
+        target_lufs: float | None,
+        target_scoring_cfg,
+        fallback_scoring_cfg,
+    ) -> list[tuple[CandidatePreset, float | None, object]]:
+        if target_lufs is None:
+            return [(preset, None, target_scoring_cfg) for preset in presets]
+        jobs: list[tuple[CandidatePreset, float | None, object]] = []
+        for preset in presets:
+            jobs.append((preset, target_lufs, target_scoring_cfg))
+            fallback_preset = CandidatePreset(
+                name=f"{preset.name}_optimaster",
+                description=f"{preset.description} OptiMaster technical fallback.",
+                ffmpeg_filter=preset.ffmpeg_filter,
+                families=preset.families,
+            )
+            jobs.append((fallback_preset, None, fallback_scoring_cfg))
+        return jobs
 
     def _write_exports(self, session: OptimizationSession, output_dir: Path) -> None:
         (output_dir / "analysis.json").write_text(
