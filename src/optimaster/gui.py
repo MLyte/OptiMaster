@@ -55,8 +55,12 @@ class WorkerRequest:
     output_dir: str
     mode: OptimizationMode
     config_path: str | None
+<<<<<<< HEAD
+    source_analysis: SourceAnalysis | None = None
+=======
     destination_profile: str
     strict_true_peak: bool
+>>>>>>> origin/main
 
 
 class DropFrame(QFrame):
@@ -112,8 +116,12 @@ class EngineWorker(QObject):
                     input_file=self.request.input_file,
                     output_dir=self.request.output_dir,
                     mode=self.request.mode,
+<<<<<<< HEAD
+                    source_analysis=self.request.source_analysis,
+=======
                     destination_profile=self.request.destination_profile,
                     strict_true_peak=self.request.strict_true_peak,
+>>>>>>> origin/main
                     progress_callback=self._emit_progress,
                 )
             self.finished.emit(result)
@@ -473,10 +481,17 @@ class MainWindow(QMainWindow):
             self.config_edit.setText(file_path)
 
     def _set_input_path(self, path: str) -> None:
+        path_obj = Path(path).resolve()
         self.input_edit.setText(path)
-        default_dir = Path(path).resolve().parent / "renders"
+        default_dir = path_obj.parent / "renders"
         self.output_edit.setText(str(default_dir))
+<<<<<<< HEAD
+        if self.current_analysis is not None and self.current_analysis.source_path != path_obj:
+            self.current_analysis = None
+        self.status_label.setText("Source file selected. Ready to analyze.")
+=======
         self.status_label.setText("Source selected. Run analysis or optimization when ready.")
+>>>>>>> origin/main
         self.progress_bar.setValue(0)
         self._update_actions()
 
@@ -499,15 +514,27 @@ class MainWindow(QMainWindow):
         output_dir = self.output_edit.text().strip() or str(Path(input_file).resolve().parent / "renders")
         config_path = self.config_edit.text().strip() or None
         mode = self.mode_combo.currentData()
+        source_analysis = self._analysis_for_request(kind, input_file)
         return WorkerRequest(
             kind=kind,
             input_file=input_file,
             output_dir=output_dir,
             mode=mode,
             config_path=config_path,
+<<<<<<< HEAD
+            source_analysis=source_analysis,
+=======
             destination_profile=self.destination_combo.currentData(),
             strict_true_peak=self.strict_tp_checkbox.isChecked(),
+>>>>>>> origin/main
         )
+
+    def _analysis_for_request(self, kind: str, input_file: str) -> SourceAnalysis | None:
+        if kind != "optimize" or self.current_analysis is None:
+            return None
+        if self.current_analysis.source_path == Path(input_file).resolve():
+            return self.current_analysis
+        return None
 
     def _start_worker(self, request: WorkerRequest) -> None:
         if self._thread is not None:

@@ -58,6 +58,7 @@ DESTINATION_SCORING_OVERRIDES = {
 @dataclass(slots=True)
 class EngineService:
     config: AppConfig
+    _ffmpeg_checked: bool = False
 
     def analyze_source(
         self,
@@ -67,7 +68,7 @@ class EngineService:
         self._notify(progress_callback, "Validating input file", 5)
         input_path = validate_input_file(input_file)
         self._notify(progress_callback, "Checking FFmpeg availability", 15)
-        assert_ffmpeg_available(self.config.ffmpeg_binary)
+        self._ensure_ffmpeg_available()
         self._notify(progress_callback, "Analyzing source loudness", 35)
         source_metrics = analyze_loudness(input_path, ffmpeg_binary=self.config.ffmpeg_binary)
         profile_str, diagnostics = classify_source(source_metrics)
@@ -85,8 +86,12 @@ class EngineService:
         input_file: str | Path,
         output_dir: str | Path,
         mode: OptimizationMode | None = None,
+<<<<<<< HEAD
+        source_analysis: SourceAnalysis | None = None,
+=======
         destination_profile: str = "streaming_prudent",
         strict_true_peak: bool = False,
+>>>>>>> origin/main
         progress_callback: ProgressCallback | None = None,
     ) -> OptimizationSession:
         selected_mode = mode or self.config.default_mode
@@ -95,7 +100,15 @@ class EngineService:
         out_dir.mkdir(parents=True, exist_ok=True)
 
         self._notify(progress_callback, "Starting optimization session", 0)
-        analysis = self.analyze_source(input_file, progress_callback=progress_callback)
+        input_path = validate_input_file(input_file)
+        analysis = source_analysis
+        if analysis is not None and analysis.source_path != input_path:
+            analysis = None
+
+        if analysis is None:
+            analysis = self.analyze_source(input_path, progress_callback=progress_callback)
+        else:
+            self._notify(progress_callback, "Reusing existing source analysis", 40)
         presets = select_presets_for_profile(
             profile=analysis.profile,
             mode=selected_mode,
@@ -149,6 +162,13 @@ class EngineService:
         self._notify(progress_callback, "Optimization complete", 100)
         return session
 
+<<<<<<< HEAD
+    def _ensure_ffmpeg_available(self) -> None:
+        if self._ffmpeg_checked:
+            return
+        assert_ffmpeg_available(self.config.ffmpeg_binary)
+        self._ffmpeg_checked = True
+=======
     def _runtime_scoring_config(self, destination_profile: str, strict_true_peak: bool):
         scoring_cfg = self.config.scoring
         overrides = DESTINATION_SCORING_OVERRIDES.get(destination_profile, {})
@@ -163,6 +183,7 @@ class EngineService:
                 hard_true_peak_max=strict_hard,
             )
         return scoring_cfg
+>>>>>>> origin/main
 
     def _write_exports(self, session: OptimizationSession, output_dir: Path) -> None:
         (output_dir / "analysis.json").write_text(
