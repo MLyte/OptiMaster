@@ -32,6 +32,11 @@ PROFILE_MAP = {
 
 ProgressCallback = Callable[[str, int], None]
 CancelCallback = Callable[[], bool]
+PRE_LOUDNESS_FILTER = (
+    "acompressor=threshold=-18dB:ratio=2:attack=5:release=50:makeup=3,"
+    "asoftclip=threshold=0.98"
+)
+DEFAULT_TARGET_LUFS = -12.0
 
 
 DESTINATION_SCORING_OVERRIDES = {
@@ -261,11 +266,16 @@ class EngineService:
         return scoring_cfg
 
     def _render_filter(self, preset_filter: str, scoring_cfg, target_lufs: float | None) -> str:
-        if target_lufs is None:
+        if target_lufs is None and "loudnorm=" not in preset_filter:
             return preset_filter
+        resolved_target = target_lufs if target_lufs is not None else DEFAULT_TARGET_LUFS
+        pre_loudness_filter = PRE_LOUDNESS_FILTER
+        if "loudnorm=" in preset_filter:
+            pre_loudness_filter = ""
+        filter_parts = [part for part in (preset_filter, pre_loudness_filter) if part]
         return (
-            f"{preset_filter},"
-            f"loudnorm=I={target_lufs:.1f}:"
+            f"{','.join(filter_parts)},"
+            f"loudnorm=I={resolved_target:.1f}:"
             f"TP={scoring_cfg.hard_true_peak_max:.1f}:"
             f"LRA={max(scoring_cfg.preferred_lra_min, 7.0):.1f}"
         )

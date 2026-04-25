@@ -211,7 +211,7 @@ def test_optimize_applies_target_lufs_to_render_filter(monkeypatch, tmp_path: Pa
     )
 
     assert render_filters == [
-        "volume=-1.5dB,loudnorm=I=-8.0:TP=-0.8:LRA=7.0",
+        "volume=-1.5dB,acompressor=threshold=-18dB:ratio=2:attack=5:release=50:makeup=3,asoftclip=threshold=0.98,loudnorm=I=-8.0:TP=-0.8:LRA=7.0",
         "volume=-1.5dB",
     ]
 
