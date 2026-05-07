@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
     QGroupBox,
+    QHeaderView,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -77,24 +78,24 @@ UI_TEXT = {
         "tab_versions": "Versions",
         "tab_listen": "Listen / Export",
         "session": "Session",
-        "hero_title": "Drop a WAV or FLAC premaster",
-        "hero_subtitle": "Classic path: choose a file, analyze it, then render candidates. Beta {version}.",
+        "hero_title": "Offline WAV/FLAC mastering assistant",
+        "hero_subtitle": "Analyze locally, create measured clean-LUFS passes, compare A/B, then export. Beta {version}.",
         "choose_file": "Choose file",
         "analyze_box": "Analyze source",
         "source_selected": "Source selected. Analyze it to unlock mastering choices.",
         "change_source": "Change source",
         "analyze_source": "Analyze source",
         "analyzed": "Analyzed",
-        "processing_time": "Time available",
+        "processing_time": "Pass depth",
         "processing_fast": "Fast preview",
         "processing_balanced": "Balanced",
         "processing_best": "Most careful",
-        "processing_hint_fast": "Fewer test passes. Good when you want a quick direction.",
-        "processing_hint_balanced": "Normal passes. Best default balance between wait time and confidence.",
-        "processing_hint_best": "More comparison passes. Slower, but gives OptiMaster more evidence to rank versions.",
+        "processing_hint_fast": "Fewer offline test passes. Good when you want a quick direction.",
+        "processing_hint_balanced": "Normal offline passes. Best default balance between wait time and confidence.",
+        "processing_hint_best": "More measured passes. Slower, but gives OptiMaster more evidence to rank versions.",
         "step_choose_source": "Step 1: choose a source file to begin.",
-        "render_box": "Render candidates",
-        "render_context_ready": "Source ready. Choose a target, then render versions.",
+        "render_box": "Create mastering passes",
+        "render_context_ready": "Source ready. Choose a LUFS target, then render offline passes.",
         "review_source": "Review source analysis",
         "hide_source": "Hide source analysis",
         "optional_config": "Optional YAML config",
@@ -117,9 +118,9 @@ UI_TEXT = {
         "hint_club": "More pressure for DJ sets and club playback; listen for kick and sub control.",
         "hint_hard": "Aggressive test for hard techno/raw energy; compare carefully before export.",
         "hint_extreme": "Stress test only: high risk of crushed kick, harsh hats, and fatigue.",
-        "target_tooltip": "Target loudness for rendered candidates. Higher, closer to zero, sounds louder.",
-        "max_loudness": "Find the loudest clean version",
-        "max_loudness_tip": "Try several louder LUFS targets and rank the best loud/safe compromise.",
+        "target_tooltip": "Target loudness for rendered mastering passes. Higher, closer to zero, sounds louder.",
+        "max_loudness": "Estimate maximum clean LUFS",
+        "max_loudness_tip": "Try several louder LUFS targets offline and rank the best loud/safe compromise.",
         "max_loudness_warning": "Before exporting, listen A/B and check kick attack, sub control, distortion, and hat fatigue.",
         "ab_check": "Go to A/B check",
         "ab_unlock": "A/B check unlocks after versions are created.",
@@ -128,9 +129,9 @@ UI_TEXT = {
         "create_template": "Create template",
         "show_advanced": "Show advanced options",
         "hide_advanced": "Hide advanced options",
-        "create_versions": "Create versions",
-        "export_final": "Export final",
-        "ready_render": "Ready to render candidate versions.",
+        "create_versions": "Create mastering passes",
+        "export_final": "Export selected version",
+        "ready_render": "Ready to render offline mastering passes.",
         "cancel": "Cancel",
         "master_goal": "Master goal",
         "quick_target": "Quick target",
@@ -148,10 +149,11 @@ UI_TEXT = {
         "show_waveform": "Show waveform and diagnostics",
         "hide_waveform": "Hide waveform and diagnostics",
         "waveform_pending": "Waveform preview appears after file selection.",
+        "selected_box": "Selected version",
         "best_box": "Best measured compromise",
-        "no_candidate_yet": "No candidate yet",
-        "candidate_pending": "Step 4: select a candidate after rendering.",
-        "listen_selected": "Listen to selected version",
+        "no_candidate_yet": "No version selected",
+        "candidate_pending": "Choose a row above to update the selected version.",
+        "listen_selected": "Listen to this version",
         "save_note": "Save listening note",
         "chosen_version": "Chosen version",
         "score": "Score",
@@ -163,7 +165,7 @@ UI_TEXT = {
         "preferences": "Preferences",
         "compare_export": "Compare and export",
         "play_source": "Play source (A)",
-        "play_candidate": "Play candidate (B)",
+        "play_candidate": "Play selected version (B)",
         "stop": "Stop",
         "new_analysis": "New analysis",
         "playback_pending": "Step 5: select a candidate, then compare A and B.",
@@ -175,8 +177,9 @@ UI_TEXT = {
         "loudness": "Loudness",
         "show_history": "Show session history",
         "hide_history": "Hide session history",
-        "choose_version": "Choose a version",
-        "choice": "Choice",
+        "choose_version": "1. Choose a version",
+        "choose_version_hint": "The selected row is used for A/B listening and export. Click another row to change it.",
+        "choice": "Role",
         "version": "Version",
         "show_scoring": "Show scoring details",
         "hide_scoring": "Hide scoring details",
@@ -193,13 +196,14 @@ UI_TEXT = {
         "preparing_analysis": "Preparing analysis...",
         "cancelling": "Cancelling after the current FFmpeg step...",
         "selected_source_next": "Selected source: {name}. Next: analyze it.",
-        "source_ready_story": "Source ready. Choose a target, then render versions.",
-        "analyzed_story": "{name} is analyzed: {lufs:.1f} LUFS, {peak:.1f} dBTP, {lra:.1f} LU dynamics. Choose an objective, then render versions.",
+        "source_ready_story": "Source ready. Choose a target, then render offline passes.",
+        "analyzed_story": "{name} is analyzed: {lufs:.1f} LUFS, {peak:.1f} dBTP, {lra:.1f} LU dynamics. Choose an objective, then create mastering passes.",
         "auto_recommendation": "Auto recommendation: {lufs:.1f} LUFS because {reason}.",
         "step2_complete": "Step 2 complete. Suggested target: {lufs:.1f} LUFS ({reason}).",
         "step3_complete": "Step 3 complete. Step 4: select a candidate.",
+        "selected_for_ab_export": "{version} is selected for A/B listening and export.",
         "render_complete": "Rendering complete. Review the recommended version.",
-        "render_cancelled": "Render cancelled. Adjust settings or create versions again.",
+        "render_cancelled": "Render cancelled. Adjust settings or create mastering passes again.",
         "cancelled": "Cancelled",
         "analysis_cancelled": "Analysis cancelled.",
         "render_failed": "Render failed. Check the error dialog for details.",
@@ -218,24 +222,24 @@ UI_TEXT = {
         "tab_versions": "Versions",
         "tab_listen": "Écoute / Export",
         "session": "Session",
-        "hero_title": "Dépose un premaster WAV ou FLAC",
-        "hero_subtitle": "Parcours simple : choisis un fichier, analyse-le, puis crée les versions. Beta {version}.",
+        "hero_title": "Assistant de mastering WAV/FLAC offline",
+        "hero_subtitle": "Analyse locale, passes clean LUFS mesurées, comparaison A/B, puis export. Beta {version}.",
         "choose_file": "Choisir fichier",
         "analyze_box": "Analyser la source",
         "source_selected": "Source choisie. Analyse-la pour débloquer les réglages de mastering.",
         "change_source": "Changer source",
         "analyze_source": "Analyser source",
         "analyzed": "Analysé",
-        "processing_time": "Temps disponible",
+        "processing_time": "Profondeur des passes",
         "processing_fast": "Apercu rapide",
         "processing_balanced": "Equilibre",
         "processing_best": "Le plus soigne",
-        "processing_hint_fast": "Moins de passes testees. Pratique pour obtenir une direction vite.",
-        "processing_hint_balanced": "Passes normales. Le meilleur compromis entre attente et confiance.",
-        "processing_hint_best": "Plus de passes comparees. Plus lent, mais le classement est mieux informe.",
+        "processing_hint_fast": "Moins de passes offline testees. Pratique pour obtenir une direction vite.",
+        "processing_hint_balanced": "Passes offline normales. Le meilleur compromis entre attente et confiance.",
+        "processing_hint_best": "Plus de passes mesurees. Plus lent, mais le classement est mieux informe.",
         "step_choose_source": "Étape 1 : choisis un fichier source.",
-        "render_box": "Créer les versions",
-        "render_context_ready": "Source prête. Choisis un objectif, puis crée les versions.",
+        "render_box": "Créer les passes de mastering",
+        "render_context_ready": "Source prête. Choisis une cible LUFS, puis rends les passes offline.",
         "review_source": "Voir analyse source",
         "hide_source": "Masquer analyse source",
         "optional_config": "Config YAML optionnelle",
@@ -258,9 +262,9 @@ UI_TEXT = {
         "hint_club": "Plus de pression pour DJ sets et club ; écoute le kick et le sub.",
         "hint_hard": "Test agressif hard techno/raw ; compare avant d’exporter.",
         "hint_extreme": "Stress test seulement : gros risque de kick écrasé, hats durs et fatigue.",
-        "target_tooltip": "Loudness cible des versions créées. Plus proche de zéro = plus fort.",
-        "max_loudness": "Trouver la version propre la plus forte",
-        "max_loudness_tip": "Teste plusieurs cibles LUFS plus fortes et classe le meilleur compromis loud/safe.",
+        "target_tooltip": "Loudness cible des passes de mastering. Plus proche de zéro = plus fort.",
+        "max_loudness": "Estimer le LUFS propre maximum",
+        "max_loudness_tip": "Teste plusieurs cibles LUFS plus fortes offline et classe le meilleur compromis loud/safe.",
         "max_loudness_warning": "Avant export, écoute A/B et vérifie l’attaque du kick, le sub, la distorsion et la fatigue des hats.",
         "ab_check": "Aller au check A/B",
         "ab_unlock": "Le check A/B se débloque après création des versions.",
@@ -269,9 +273,9 @@ UI_TEXT = {
         "create_template": "Template YAML",
         "show_advanced": "Afficher options avancées",
         "hide_advanced": "Masquer options avancées",
-        "create_versions": "Créer versions",
-        "export_final": "Exporter final",
-        "ready_render": "Prêt à créer les versions candidates.",
+        "create_versions": "Créer passes mastering",
+        "export_final": "Exporter la version sélectionnée",
+        "ready_render": "Prêt à rendre les passes de mastering offline.",
         "cancel": "Annuler",
         "master_goal": "Objectif",
         "quick_target": "Cible rapide",
@@ -289,10 +293,11 @@ UI_TEXT = {
         "show_waveform": "Afficher onde et diagnostics",
         "hide_waveform": "Masquer onde et diagnostics",
         "waveform_pending": "L’aperçu d’onde apparaît après sélection du fichier.",
+        "selected_box": "Version sélectionnée",
         "best_box": "Meilleur compromis mesuré",
-        "no_candidate_yet": "Aucune version",
-        "candidate_pending": "Étape 4 : sélectionne une version après rendu.",
-        "listen_selected": "Écouter la version choisie",
+        "no_candidate_yet": "Aucune version sélectionnée",
+        "candidate_pending": "Clique une ligne au-dessus pour mettre à jour la version sélectionnée.",
+        "listen_selected": "Écouter cette version",
         "save_note": "Sauver note d’écoute",
         "chosen_version": "Version choisie",
         "score": "Score",
@@ -304,7 +309,7 @@ UI_TEXT = {
         "preferences": "Préférences",
         "compare_export": "Comparer et exporter",
         "play_source": "Lire source (A)",
-        "play_candidate": "Lire version (B)",
+        "play_candidate": "Lire version sélectionnée (B)",
         "stop": "Stop",
         "new_analysis": "Nouvelle analyse",
         "playback_pending": "Étape 5 : sélectionne une version, puis compare A et B.",
@@ -316,8 +321,9 @@ UI_TEXT = {
         "loudness": "Loudness",
         "show_history": "Afficher historique",
         "hide_history": "Masquer historique",
-        "choose_version": "Choisir une version",
-        "choice": "Choix",
+        "choose_version": "1. Choisir une version",
+        "choose_version_hint": "La ligne sélectionnée sert à l’écoute A/B et à l’export. Clique une autre ligne pour changer.",
+        "choice": "Rôle",
         "version": "Version",
         "show_scoring": "Afficher scoring",
         "hide_scoring": "Masquer scoring",
@@ -334,13 +340,14 @@ UI_TEXT = {
         "preparing_analysis": "Préparation de l’analyse...",
         "cancelling": "Annulation après l’étape FFmpeg en cours...",
         "selected_source_next": "Source choisie : {name}. Prochaine étape : analyse.",
-        "source_ready_story": "Source prête. Choisis une cible, puis crée les versions.",
-        "analyzed_story": "{name} est analysé : {lufs:.1f} LUFS, {peak:.1f} dBTP, {lra:.1f} LU de dynamique. Choisis un objectif, puis crée les versions.",
+        "source_ready_story": "Source prête. Choisis une cible, puis rends les passes offline.",
+        "analyzed_story": "{name} est analysé : {lufs:.1f} LUFS, {peak:.1f} dBTP, {lra:.1f} LU de dynamique. Choisis un objectif, puis crée les passes de mastering.",
         "auto_recommendation": "Recommandation auto : {lufs:.1f} LUFS car {reason}.",
         "step2_complete": "Étape 2 terminée. Cible suggérée : {lufs:.1f} LUFS ({reason}).",
         "step3_complete": "Étape 3 terminée. Étape 4 : sélectionne une version.",
+        "selected_for_ab_export": "{version} est sélectionnée pour l’écoute A/B et l’export.",
         "render_complete": "Rendu terminé. Vérifie la version recommandée.",
-        "render_cancelled": "Rendu annulé. Ajuste les réglages ou recrée les versions.",
+        "render_cancelled": "Rendu annulé. Ajuste les réglages ou recrée les passes de mastering.",
         "cancelled": "Annulé",
         "analysis_cancelled": "Analyse annulée.",
         "render_failed": "Le rendu a échoué. Vérifie le message d’erreur.",
@@ -366,7 +373,7 @@ CONFIG_TEMPLATE = """# OptiMaster config template
 #
 # Common goals:
 # - Keep it simple: leave this file as-is and use the app quick targets.
-# - Louder master: use the app "Max loudness, keep quality" option first.
+# - Louder master: use the app "Estimate maximum clean LUFS" option first.
 # - Advanced users: tune scoring values below.
 
 # FFmpeg executable. Use "ffmpeg" if it is available on PATH.
@@ -751,7 +758,7 @@ class RenderBusyOverlay(QWidget):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setObjectName("renderBusyOverlay")
-        self._message = "Creating versions..."
+        self._message = "Creating mastering passes..."
         self._phase = 0
         self._timer = QTimer(self)
         self._timer.setInterval(70)
@@ -907,8 +914,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle(f"{APP_TITLE} - {APP_DISPLAY_VERSION}")
         self.setWindowIcon(app_icon())
-        self.resize(1240, 760)
-        self.setMinimumSize(1080, 640)
+        self.resize(1320, 840)
+        self.setMinimumSize(1180, 720)
         self.settings = QSettings("OptiMaster", "OptiMaster")
         self.language = str(self.settings.value("language", "en"))
         if self.language not in UI_TEXT:
@@ -973,8 +980,8 @@ class MainWindow(QMainWindow):
         candidate_layout = QVBoxLayout(candidate_step)
         candidate_layout.setContentsMargins(0, 0, 0, 0)
         candidate_layout.setSpacing(14)
-        candidate_layout.addWidget(self._build_best_candidate())
         candidate_layout.addWidget(self._build_results(), stretch=1)
+        candidate_layout.addWidget(self._build_best_candidate())
 
         listening_step = QWidget()
         listening_layout = QVBoxLayout(listening_step)
@@ -985,8 +992,7 @@ class MainWindow(QMainWindow):
         self.workflow_tabs.addTab(source_step, "Source")
         self.workflow_tabs.addTab(candidate_step, "Versions")
         self.workflow_tabs.addTab(listening_step, "Listen / Export")
-        root.addWidget(self.workflow_tabs)
-        root.addStretch(1)
+        root.addWidget(self.workflow_tabs, stretch=1)
 
         self.setCentralWidget(central)
         self._build_menu()
@@ -1026,13 +1032,13 @@ class MainWindow(QMainWindow):
         title_icon = QLabel()
         title_icon.setPixmap(lucide_icon("waveform", BRAND_ACCENT).pixmap(28, 28))
         title_icon.setObjectName("heroIcon")
-        self.hero_title = QLabel("Drop a WAV or FLAC premaster")
+        self.hero_title = QLabel("Offline WAV/FLAC mastering assistant")
         self.hero_title.setObjectName("heroTitle")
         title_row.addWidget(title_icon)
         title_row.addWidget(self.hero_title)
         title_row.addStretch(1)
         self.hero_subtitle = QLabel(
-            f"Classic path: choose a file, analyze it, then render candidates. Beta {APP_DISPLAY_VERSION}."
+            f"Analyze locally, create measured clean-LUFS passes, compare A/B, then export. Beta {APP_DISPLAY_VERSION}."
         )
         self.hero_subtitle.setWordWrap(True)
 
@@ -1072,7 +1078,7 @@ class MainWindow(QMainWindow):
         self.analyze_button.setObjectName("stepAction")
         set_lucide_icon(self.analyze_button, "activity", CTA_ICON_COLOR)
         self.analyze_button.clicked.connect(self._run_analyze)
-        self.processing_label = QLabel("Time available")
+        self.processing_label = QLabel("Pass depth")
         self.processing_label.setObjectName("formLabel")
         self.processing_slider = QSlider(Qt.Orientation.Horizontal)
         self.processing_slider.setRange(0, 2)
@@ -1096,7 +1102,7 @@ class MainWindow(QMainWindow):
         processing_slider_layout.setSpacing(4)
         processing_slider_layout.addWidget(self.processing_slider)
         processing_slider_layout.addLayout(processing_scale)
-        self.processing_hint_label = QLabel("Normal passes. Best default balance between wait time and confidence.")
+        self.processing_hint_label = QLabel("Normal offline passes. Best default balance between wait time and confidence.")
         self.processing_hint_label.setObjectName("targetHint")
         self.processing_hint_label.setWordWrap(True)
         self.status_label = QLabel("Step 1: choose a source file to begin.")
@@ -1117,13 +1123,13 @@ class MainWindow(QMainWindow):
         return self.analyze_box
 
     def _build_render_controls(self) -> QGroupBox:
-        self.render_box = QGroupBox("Render candidates")
+        self.render_box = QGroupBox("Create mastering passes")
         self.render_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         layout = QGridLayout(self.render_box)
         layout.setHorizontalSpacing(16)
         layout.setVerticalSpacing(10)
 
-        self.render_context_label = QLabel("Source ready. Choose a target, then render versions.")
+        self.render_context_label = QLabel("Source ready. Choose a LUFS target, then render offline passes.")
         self.render_context_label.setObjectName("storyLabel")
         self.render_context_label.setWordWrap(True)
         self.source_review_button = QPushButton("Review source analysis")
@@ -1164,7 +1170,7 @@ class MainWindow(QMainWindow):
         self.target_lufs_spin.setSingleStep(0.5)
         self.target_lufs_spin.setValue(-9.0)
         self.target_lufs_spin.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
-        self.target_lufs_spin.setToolTip("Target loudness for rendered candidates. Higher, closer to zero, sounds louder.")
+        self.target_lufs_spin.setToolTip("Target loudness for rendered mastering passes. Higher, closer to zero, sounds louder.")
         self.target_lufs_unit = QLabel("LUFS")
         self.target_lufs_unit.setObjectName("inputUnit")
         target_lufs_field = QFrame()
@@ -1174,10 +1180,10 @@ class MainWindow(QMainWindow):
         target_lufs_layout.setSpacing(8)
         target_lufs_layout.addWidget(self.target_lufs_spin, stretch=1)
         target_lufs_layout.addWidget(self.target_lufs_unit)
-        self.max_loudness_checkbox = QCheckBox("Find the loudest clean version")
+        self.max_loudness_checkbox = QCheckBox("Estimate maximum clean LUFS")
         self.max_loudness_checkbox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         self.max_loudness_checkbox.setToolTip(
-            "Try several louder LUFS targets and rank the best loud/safe compromise."
+            "Try several louder LUFS targets offline and rank the best loud/safe compromise."
         )
         self.max_loudness_checkbox.toggled.connect(self._update_actions)
         self.max_loudness_warning = QLabel(
@@ -1215,15 +1221,15 @@ class MainWindow(QMainWindow):
         self.advanced_button.clicked.connect(self._toggle_advanced_options)
         self.advanced_options_visible = False
 
-        self.optimize_button = QPushButton("Create versions")
-        self.export_button = QPushButton("Export final")
+        self.optimize_button = QPushButton("Create mastering passes")
+        self.export_button = QPushButton("Export selected version")
         self.optimize_button.setObjectName("stepAction")
         self.export_button.setObjectName("primaryAction")
         set_lucide_icon(self.optimize_button, "audio-lines", CTA_ICON_COLOR)
         set_lucide_icon(self.export_button, "download", PRIMARY_ICON_COLOR)
         self.optimize_button.clicked.connect(self._run_optimize)
         self.export_button.clicked.connect(self._export_selected_candidate)
-        self.render_status_label = QLabel("Ready to render candidate versions.")
+        self.render_status_label = QLabel("Ready to render offline mastering passes.")
         self.render_status_label.setObjectName("renderStatus")
         self.render_status_label.setWordWrap(True)
         self.render_status_label.setMinimumHeight(52)
@@ -1383,7 +1389,7 @@ class MainWindow(QMainWindow):
         return self.source_box
 
     def _build_best_candidate(self) -> QGroupBox:
-        self.best_box = QGroupBox("Best measured compromise")
+        self.best_box = QGroupBox("Selected version")
         self.best_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         best_layout = QGridLayout(self.best_box)
         best_layout.setContentsMargins(18, 18, 18, 18)
@@ -1409,7 +1415,7 @@ class MainWindow(QMainWindow):
         self.rating_spin.setRange(1, 5)
         self.rating_spin.setValue(3)
         self.rating_spin.setMinimumHeight(44)
-        self.listen_selected_button = QPushButton("Listen to selected version")
+        self.listen_selected_button = QPushButton("Listen to this version")
         self.listen_selected_button.setMinimumHeight(44)
         self.listen_selected_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         set_lucide_icon(self.listen_selected_button, "headphones")
@@ -1449,7 +1455,7 @@ class MainWindow(QMainWindow):
 
         listening_row = QHBoxLayout()
         self.play_source_button = QPushButton("Play source (A)")
-        self.play_candidate_button = QPushButton("Play candidate (B)")
+        self.play_candidate_button = QPushButton("Play selected version (B)")
         self.stop_audio_button = QPushButton("Stop")
         self.new_analysis_button = QPushButton("New analysis")
         self.play_source_button.setObjectName("secondaryAction")
@@ -1512,9 +1518,10 @@ class MainWindow(QMainWindow):
         self.history_table.setShowGrid(False)
         self.history_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.history_table.verticalHeader().setVisible(False)
-        self.history_table.horizontalHeader().setStretchLastSection(True)
+        self.history_table.horizontalHeader().setStretchLastSection(False)
         self.history_table.verticalHeader().setDefaultSectionSize(38)
-        self.history_table.setMaximumHeight(170)
+        self.history_table.setMinimumHeight(180)
+        self.history_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.history_table.setVisible(False)
         self.history_button = QPushButton("Show session history")
         self.history_button.setObjectName("secondaryAction")
@@ -1533,18 +1540,26 @@ class MainWindow(QMainWindow):
         self.results_box = QGroupBox("Choose a version")
         layout = QVBoxLayout(self.results_box)
 
+        self.results_hint_label = QLabel(
+            "The selected row is used for A/B listening and export. Click another row to change it."
+        )
+        self.results_hint_label.setObjectName("statusHint")
+        self.results_hint_label.setWordWrap(True)
+
         self.results_table = QTableWidget(0, 6)
-        self.results_table.setHorizontalHeaderLabels(["Choice", "Version", "Score", "LUFS", "TP", "LRA"])
+        self.results_table.setHorizontalHeaderLabels(["Role", "Version", "Score", "LUFS", "TP", "LRA"])
         self.results_table.setAlternatingRowColors(True)
         self.results_table.setShowGrid(False)
         self.results_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.results_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.results_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.results_table.verticalHeader().setVisible(False)
-        self.results_table.horizontalHeader().setStretchLastSection(True)
+        self.results_table.horizontalHeader().setStretchLastSection(False)
         self.results_table.verticalHeader().setDefaultSectionSize(40)
-        self.results_table.setMaximumHeight(190)
+        self.results_table.setMinimumHeight(260)
+        self.results_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.results_table.itemSelectionChanged.connect(self._update_selected_candidate_details)
+        self.results_table.cellDoubleClicked.connect(lambda *_args: self.workflow_tabs.setCurrentIndex(2))
 
         self.details_button = QPushButton("Show scoring details")
         self.details_button.setObjectName("secondaryAction")
@@ -1558,10 +1573,26 @@ class MainWindow(QMainWindow):
         self.details_panel.setMaximumHeight(170)
         self.details_panel.setVisible(False)
 
+        layout.addWidget(self.results_hint_label)
         layout.addWidget(self.results_table)
         layout.addWidget(self.details_button)
         layout.addWidget(self.details_panel)
         return self.results_box
+
+    def _apply_results_table_layout(self) -> None:
+        header = self.results_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        for column in range(2, self.results_table.columnCount()):
+            header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+
+    def _apply_history_table_layout(self) -> None:
+        header = self.history_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
 
     def _build_menu(self) -> None:
         self.file_menu = self.menuBar().addMenu("File")
@@ -1703,7 +1734,7 @@ class MainWindow(QMainWindow):
         if self.waveform_label.pixmap() is None or self.waveform_label.pixmap().isNull():
             self.waveform_label.setText(self._t("waveform_pending"))
 
-        self.best_box.setTitle(self._t("best_box"))
+        self.best_box.setTitle(self._t("selected_box"))
         if self.current_session is None:
             self.best_labels["name"].setText(self._t("no_candidate_yet"))
             self.best_labels["reasons"].setText(self._t("candidate_pending"))
@@ -1729,6 +1760,7 @@ class MainWindow(QMainWindow):
         self.history_table.setHorizontalHeaderLabels(["Date (UTC)", "Session", self._t("master_goal"), self._t("best_box"), self._t("tab_source")])
 
         self.results_box.setTitle(self._t("choose_version"))
+        self.results_hint_label.setText(self._t("choose_version_hint"))
         self.results_table.setHorizontalHeaderLabels(
             [self._t("choice"), self._t("version"), self._t("score"), "LUFS", "TP", "LRA"]
         )
@@ -2361,7 +2393,7 @@ class MainWindow(QMainWindow):
             self.cancel_render_button.setVisible(True)
             self.cancel_render_button.setEnabled(True)
             self._position_render_overlay()
-            self.render_overlay.start("Creating versions...")
+            self.render_overlay.start("Creating mastering passes...")
         else:
             self.progress_bar.setValue(0)
             self.progress_bar.setVisible(True)
@@ -2522,7 +2554,7 @@ class MainWindow(QMainWindow):
         self.results_table.setRowCount(len(session.candidates))
         for row, candidate in enumerate(session.candidates):
             values = [
-                "Best compromise" if row == 0 else self._candidate_choice_label(candidate),
+                "Recommended" if row == 0 else self._candidate_choice_label(candidate),
                 self._candidate_version_label(candidate),
                 f"{candidate.score:.1f}",
                 f"{candidate.output_metrics.integrated_lufs:.1f}",
@@ -2533,7 +2565,7 @@ class MainWindow(QMainWindow):
                 item = QTableWidgetItem(value)
                 item.setData(Qt.ItemDataRole.UserRole, candidate)
                 self.results_table.setItem(row, col, item)
-        self.results_table.resizeColumnsToContents()
+        self._apply_results_table_layout()
         if session.candidates:
             self.results_table.selectRow(0)
             self._populate_best_candidate(session.best_candidate)
@@ -2542,15 +2574,16 @@ class MainWindow(QMainWindow):
 
     def _populate_best_candidate(self, candidate: CandidateResult | None) -> None:
         if candidate is None:
-            self.best_labels["name"].setText("No candidate")
+            self.best_labels["name"].setText(self._t("no_candidate_yet"))
             self.best_labels["score"].setText("--")
             self.best_labels["metrics"].setText("--")
-            self.best_labels["reasons"].setText("Step 3 first: render candidates, then select one from the table.")
+            self.best_labels["reasons"].setText(self._t("candidate_pending"))
             self.best_labels["path"].setText("--")
             return
 
         metrics = candidate.output_metrics
-        self.best_labels["name"].setText(f"{self._candidate_version_label(candidate)} (best measured compromise)")
+        role = self._candidate_choice_label(candidate)
+        self.best_labels["name"].setText(f"{self._candidate_version_label(candidate)} - {role}")
         self.best_labels["score"].setText(f"{candidate.score:.1f}")
         self.best_labels["metrics"].setText(
             ", ".join(
@@ -2608,9 +2641,8 @@ class MainWindow(QMainWindow):
         )
         self.details_panel.setPlainText("\n".join(lines))
         self._populate_before_after(selected)
-        self.status_label.setText("Step 4 complete. Step 5: listen A/B, then step 6: export.")
-        if self.current_session and getattr(self.current_session, "best_candidate", None) is selected:
-            self._populate_best_candidate(selected)
+        self.status_label.setText(self._t("selected_for_ab_export", version=self._candidate_version_label(selected)))
+        self._populate_best_candidate(selected)
         self._update_actions()
 
     def _toggle_candidate_details(self) -> None:
@@ -2650,7 +2682,7 @@ class MainWindow(QMainWindow):
             return "Clean fallback"
         if self.current_session and self.current_session.candidates:
             if self.current_session.candidates[0] is candidate:
-                return "Best measured compromise"
+                return "Recommended"
         return "Your target version"
 
     def _candidate_version_label(self, candidate: CandidateResult) -> str:
@@ -2812,7 +2844,7 @@ class MainWindow(QMainWindow):
             self._show_error("Select a rendered candidate before exporting.")
             return
         if not self._candidate_in_current_session(candidate):
-            self._show_error("This candidate is no longer part of the current session. Create versions again.")
+            self._show_error("This candidate is no longer part of the current session. Create mastering passes again.")
             return
         if not candidate.output_path.exists():
             self._show_error(f"Cannot export missing rendered file:\n{candidate.output_path}")
@@ -2820,7 +2852,7 @@ class MainWindow(QMainWindow):
 
         destination, _ = QFileDialog.getSaveFileName(
             self,
-            "Export final version",
+            self._t("export_final"),
             str(self._default_export_path(candidate)),
             "WAV files (*.wav);;FLAC files (*.flac);;All files (*.*)",
         )
@@ -2888,7 +2920,7 @@ class MainWindow(QMainWindow):
         self.render_work_pulse.stop()
         self.render_progress_bar.setValue(0)
         self.render_progress_bar.setVisible(False)
-        self.render_status_label.setText("Ready to render candidate versions.")
+        self.render_status_label.setText("Ready to render offline mastering passes.")
         self.render_overlay.stop()
         self.status_label.setText("Choose a source file to begin.")
         self.source_box.setVisible(False)
@@ -2976,7 +3008,7 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(False)
         current_path = Path(source_path)
         if self.current_analysis is not None and self.current_analysis.source_path == current_path:
-            self.status_label.setText("Step 2 complete. Step 3: render candidates.")
+            self.status_label.setText("Step 2 complete. Step 3: create mastering passes.")
             self.progress_bar.setValue(100)
             return
 
@@ -3002,7 +3034,7 @@ class MainWindow(QMainWindow):
         self.details_panel.clear()
         self._clear_before_after()
         self._populate_best_candidate(None)
-        self.render_status_label.setText("Ready to render candidate versions.")
+        self.render_status_label.setText("Ready to render offline mastering passes.")
         self.render_progress_bar.setValue(0)
         self.render_progress_bar.setVisible(False)
         self._update_actions()
@@ -3024,7 +3056,7 @@ class MainWindow(QMainWindow):
             ]
             for col, value in enumerate(values):
                 self.history_table.setItem(row, col, QTableWidgetItem(value))
-        self.history_table.resizeColumnsToContents()
+        self._apply_history_table_layout()
 
     def _toggle_history(self) -> None:
         visible = self.history_table.isHidden()
@@ -3155,10 +3187,14 @@ class MainWindow(QMainWindow):
 
         target_height = self._target_window_height()
         if abs(self.height() - target_height) > 28:
-            self.resize(self.width(), target_height)
+            self.resize(max(self.width(), 1320), target_height)
 
     def _target_window_height(self) -> int:
         current_index = self.workflow_tabs.currentIndex()
+        max_height = 940
+        screen = QApplication.primaryScreen()
+        if screen is not None:
+            max_height = max(760, screen.availableGeometry().height() - 80)
         has_input = bool(self.input_edit.text().strip())
         has_analysis = (
             self.current_analysis is not None
@@ -3167,9 +3203,9 @@ class MainWindow(QMainWindow):
         )
         if current_index == 0:
             if not has_input:
-                return 640
+                return min(760, max_height)
             if not has_analysis:
-                return 640
+                return min(760, max_height)
             height = 760
             if not self.source_box.isHidden():
                 height += 190
@@ -3177,10 +3213,10 @@ class MainWindow(QMainWindow):
                 height += 170
             if self.advanced_options_visible:
                 height += 95
-            return min(height, 940)
+            return min(height, max_height)
         if current_index == 1:
-            return 900 if self.details_panel.isVisible() else 780
-        return 820 if not self.history_table.isHidden() else 740
+            return min(900 if self.details_panel.isVisible() else 840, max_height)
+        return min(840 if not self.history_table.isHidden() else 780, max_height)
 
     def resizeEvent(self, event: object) -> None:
         super().resizeEvent(event)

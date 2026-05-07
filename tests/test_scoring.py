@@ -1,7 +1,7 @@
 from optimaster.config import ScoringConfig
 from optimaster.models import LoudnessMetrics, OptimizationMode, SourceProfile
 from optimaster.presets import select_presets_for_profile
-from optimaster.scoring import classify_source, score_candidate
+from optimaster.scoring import classify_source, estimate_clean_lufs_ceiling, score_candidate
 
 
 def test_score_candidate_prefers_safe_reasonable_output():
@@ -51,6 +51,21 @@ def test_classify_source_very_hot_when_true_peak_too_high():
     )
     assert profile == "very_hot"
     assert reasons
+    assert any("estimated clean lufs ceiling" in reason.lower() for reason in reasons)
+
+
+def test_estimate_clean_lufs_ceiling_allows_louder_dynamic_sources():
+    assert (
+        estimate_clean_lufs_ceiling(
+            LoudnessMetrics(
+                integrated_lufs=-14.5,
+                true_peak_dbtp=-1.8,
+                lra_lu=8.2,
+                threshold_lufs=-24.0,
+            )
+        )
+        == -8.0
+    )
 
 
 def test_select_presets_for_safe_mode_very_hot_profile():

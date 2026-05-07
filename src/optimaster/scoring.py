@@ -4,8 +4,24 @@ from optimaster.config import ScoringConfig
 from optimaster.models import LoudnessMetrics, OptimizationMode
 
 
+def estimate_clean_lufs_ceiling(metrics: LoudnessMetrics) -> float:
+    if metrics.true_peak_dbtp >= -0.7:
+        return -10.5
+    if metrics.lra_lu < 4.5:
+        return -10.5
+    if metrics.lra_lu >= 8.0 and metrics.true_peak_dbtp <= -1.5:
+        return -8.0
+    if metrics.lra_lu >= 6.0 and metrics.true_peak_dbtp <= -1.0:
+        return -8.5
+    if metrics.integrated_lufs <= -14.0 and metrics.true_peak_dbtp <= -1.0:
+        return -9.0
+    return -9.5
+
+
 def classify_source(metrics: LoudnessMetrics) -> tuple[str, list[str]]:
     reasons: list[str] = []
+    clean_ceiling = estimate_clean_lufs_ceiling(metrics)
+    reasons.append(f"Estimated clean LUFS ceiling: {clean_ceiling:.1f} LUFS.")
     if metrics.true_peak_dbtp >= -0.7:
         reasons.append("Source true peak is already close to 0 dBTP.")
         return "very_hot", reasons
