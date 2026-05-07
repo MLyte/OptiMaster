@@ -6,11 +6,11 @@ It analyzes a source file, renders several mastering candidates with FFmpeg, mea
 
 ## Public Beta
 
-Current beta version: `2026.4.24`.
+Current beta version: `v0.26.05.08`.
 
 The app shows its runtime in the header and title bar so testers can avoid mixing builds:
-- `2026.4.24-python` means the local Python/dev app is running.
-- `2026.4.24-exe` means the packaged executable is running.
+- `v0.26.05.08-python` means the local Python/dev app is running.
+- `v0.26.05.08-exe` means the packaged executable is running.
 
 This project is in beta and is meant to be tested.
 

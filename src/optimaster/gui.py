@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QDoubleSpinBox,
     QSlider,
@@ -58,6 +59,7 @@ APP_RUNTIME = "exe" if getattr(sys, "frozen", False) else "python"
 APP_DISPLAY_VERSION = f"{APP_VERSION}-{APP_RUNTIME}"
 APP_ICON = "optimaster_icon.ico"
 APP_ICON_FALLBACK = "optimaster_icon.svg"
+CONTENT_MAX_WIDTH = 1500
 BRAND_ACCENT = "#e5b94d"
 CTA_ICON_COLOR = "#071111"
 PRIMARY_ICON_COLOR = "#18181b"
@@ -961,10 +963,13 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(24, 22, 24, 24)
         root.setSpacing(18)
 
-        root.addWidget(self._build_brand_header())
+        self.brand_header = self._build_brand_header()
+        self.brand_header.setMaximumWidth(CONTENT_MAX_WIDTH)
+        root.addWidget(self.brand_header, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         self.workflow_tabs = QTabWidget()
         self.workflow_tabs.setObjectName("workflowTabs")
+        self.workflow_tabs.setMaximumWidth(CONTENT_MAX_WIDTH)
 
         source_step = QWidget()
         source_layout = QVBoxLayout(source_step)
@@ -989,13 +994,23 @@ class MainWindow(QMainWindow):
         listening_layout.setSpacing(14)
         listening_layout.addWidget(self._build_listening_tools(), stretch=1)
 
-        self.workflow_tabs.addTab(source_step, "Source")
-        self.workflow_tabs.addTab(candidate_step, "Versions")
-        self.workflow_tabs.addTab(listening_step, "Listen / Export")
-        root.addWidget(self.workflow_tabs, stretch=1)
+        self.workflow_tabs.addTab(self._scrollable_step(source_step), "Source")
+        self.workflow_tabs.addTab(self._scrollable_step(candidate_step), "Versions")
+        self.workflow_tabs.addTab(self._scrollable_step(listening_step), "Listen / Export")
+        root.addWidget(self.workflow_tabs, stretch=1, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         self.setCentralWidget(central)
         self._build_menu()
+
+    def _scrollable_step(self, content: QWidget) -> QScrollArea:
+        scroll_area = QScrollArea()
+        scroll_area.setObjectName("tabScrollArea")
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_area.setWidget(content)
+        return scroll_area
 
     def _build_brand_header(self) -> QFrame:
         brand = QFrame()
@@ -1556,7 +1571,8 @@ class MainWindow(QMainWindow):
         self.results_table.verticalHeader().setVisible(False)
         self.results_table.horizontalHeader().setStretchLastSection(False)
         self.results_table.verticalHeader().setDefaultSectionSize(40)
-        self.results_table.setMinimumHeight(260)
+        self.results_table.setMinimumHeight(150)
+        self.results_table.setMaximumHeight(340)
         self.results_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.results_table.itemSelectionChanged.connect(self._update_selected_candidate_details)
         self.results_table.cellDoubleClicked.connect(lambda *_args: self.workflow_tabs.setCurrentIndex(2))

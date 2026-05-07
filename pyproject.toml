@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "optimaster"
-version = "2026.4.24"
+version = "0.26.5.8"
 description = "Local FFmpeg-based audio finishing assistant"
 readme = "README.md"
 requires-python = ">=3.11"
