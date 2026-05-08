@@ -60,6 +60,7 @@ APP_DISPLAY_VERSION = f"{APP_VERSION}-{APP_RUNTIME}"
 APP_ICON = "optimaster_icon.ico"
 APP_ICON_FALLBACK = "optimaster_icon.svg"
 CONTENT_MAX_WIDTH = 1500
+CONTENT_MIN_WIDTH = 980
 BRAND_ACCENT = "#e5b94d"
 CTA_ICON_COLOR = "#071111"
 PRIMARY_ICON_COLOR = "#18181b"
@@ -916,8 +917,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle(f"{APP_TITLE} - {APP_DISPLAY_VERSION}")
         self.setWindowIcon(app_icon())
-        self.resize(1320, 840)
-        self.setMinimumSize(1180, 720)
+        self.resize(1180, 760)
+        self.setMinimumSize(1040, 680)
         self.settings = QSettings("OptiMaster", "OptiMaster")
         self.language = str(self.settings.value("language", "en"))
         if self.language not in UI_TEXT:
@@ -965,11 +966,13 @@ class MainWindow(QMainWindow):
 
         self.brand_header = self._build_brand_header()
         self.brand_header.setMaximumWidth(CONTENT_MAX_WIDTH)
+        self.brand_header.setMinimumWidth(CONTENT_MIN_WIDTH)
         root.addWidget(self.brand_header, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         self.workflow_tabs = QTabWidget()
         self.workflow_tabs.setObjectName("workflowTabs")
         self.workflow_tabs.setMaximumWidth(CONTENT_MAX_WIDTH)
+        self.workflow_tabs.setMinimumWidth(CONTENT_MIN_WIDTH)
 
         source_step = QWidget()
         source_layout = QVBoxLayout(source_step)
@@ -3203,7 +3206,7 @@ class MainWindow(QMainWindow):
 
         target_height = self._target_window_height()
         if abs(self.height() - target_height) > 28:
-            self.resize(max(self.width(), 1320), target_height)
+            self.resize(self.width(), target_height)
 
     def _target_window_height(self) -> int:
         current_index = self.workflow_tabs.currentIndex()
