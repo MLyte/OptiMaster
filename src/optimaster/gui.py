@@ -10,7 +10,7 @@ from importlib import resources
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QRectF, QSettings, QSize, QThread, QTimer, Qt, QUrl, Signal
-from PySide6.QtGui import QAction, QActionGroup, QColor, QDesktopServices, QDragEnterEvent, QDropEvent, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtGui import QAction, QActionGroup, QBrush, QColor, QDesktopServices, QDragEnterEvent, QDropEvent, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication,
@@ -60,7 +60,9 @@ APP_DISPLAY_VERSION = f"{APP_VERSION}-{APP_RUNTIME}"
 APP_ICON = "optimaster_icon.ico"
 APP_ICON_FALLBACK = "optimaster_icon.svg"
 CONTENT_MAX_WIDTH = 1500
-CONTENT_MIN_WIDTH = 980
+CONTENT_MIN_WIDTH = 820
+DEFAULT_WINDOW_WIDTH = 1920
+DEFAULT_WINDOW_HEIGHT = 1080
 BRAND_ACCENT = "#e5b94d"
 CTA_ICON_COLOR = "#071111"
 PRIMARY_ICON_COLOR = "#18181b"
@@ -77,9 +79,9 @@ UI_TEXT = {
         "menu_choose_output": "Choose output folder",
         "menu_quit": "Quit",
         "menu_maker": "Meet the maker",
-        "tab_source": "Source",
-        "tab_versions": "Versions",
-        "tab_listen": "Listen / Export",
+        "tab_source": "1. Source",
+        "tab_versions": "2. Versions",
+        "tab_listen": "3. A/B",
         "session": "Session",
         "hero_title": "Offline WAV/FLAC mastering assistant",
         "hero_subtitle": "Analyze locally, create measured clean-LUFS passes, compare A/B, then export. Beta {version}.",
@@ -145,6 +147,7 @@ UI_TEXT = {
         "source_analysis": "Source analysis",
         "not_analyzed": "Not analyzed",
         "diagnostics_pending": "Step 2 appears here after analysis.",
+        "diagnostic_already_hot": "Source already hot: prioritize transparent and minimal moves.",
         "acoustic_note": "Meters are technical indicators. Final validation depends on monitoring level and room acoustics.",
         "profile": "Profile",
         "true_peak": "True peak",
@@ -166,12 +169,18 @@ UI_TEXT = {
         "next": "Next",
         "rating": "Rating (1-5)",
         "preferences": "Preferences",
-        "compare_export": "Compare and export",
-        "play_source": "Play source (A)",
-        "play_candidate": "Play selected version (B)",
+        "compare_export": "Compare A/B",
+        "final_export": "Export",
+        "play_source": "Play A",
+        "play_candidate": "Play B",
         "stop": "Stop",
         "new_analysis": "New analysis",
-        "playback_pending": "Step 5: select a candidate, then compare A and B.",
+        "playback_pending": "Select a B version, compare it with A, then export the version you want.",
+        "selected_b_title": "Version B",
+        "selected_b_empty": "No B version selected yet.",
+        "selected_b_summary": "{version} · {verdict} · Score {score:.1f}",
+        "selected_b_metrics": "LUFS {lufs:.1f} · TP {peak:.1f} dBTP · LRA {lra:.1f} LU",
+        "ab_version": "B version to compare/export",
         "metric": "Metric",
         "before": "Before",
         "after": "After",
@@ -181,12 +190,102 @@ UI_TEXT = {
         "show_history": "Show session history",
         "hide_history": "Hide session history",
         "choose_version": "1. Choose a version",
-        "choose_version_hint": "The selected row is used for A/B listening and export. Click another row to change it.",
+        "choose_version_empty_hint": "Rendered versions will appear here after mastering passes are created.",
+        "choose_version_hint": "Use Verdict first, then Score and meters. Select a row, then compare/export it in A/B.",
+        "compare_ab": "Compare in A/B",
         "choice": "Role",
+        "verdict_label": "Verdict",
         "version": "Version",
         "show_scoring": "Show scoring details",
         "hide_scoring": "Hide scoring details",
         "details_placeholder": "Step 4: select the recommended version, or an alternative if you want to compare.",
+        "export_complete_title": "Export complete",
+        "export_complete_body": "Copied {version} to:\n{destination}",
+        "export_complete_next": "Export complete. Start a new analysis when you are ready.",
+        "select_rendered_candidate": "Select a rendered candidate before exporting.",
+        "stale_candidate": "This candidate is no longer part of the current session. Create mastering passes again.",
+        "missing_rendered_file": "Cannot export missing rendered file:\n{path}",
+        "export_failed": "Export failed:\n{error}",
+        "select_note_candidate": "Select a candidate to save a listening note.",
+        "note_saved": "Saved note for {version} in {path}",
+        "waveform_loading": "Loading waveform preview...",
+        "source_preview_loading": "Loading source preview...",
+        "waveform_unavailable": "Waveform preview unavailable for this file.",
+        "step3_create_versions": "Step 2 complete. Step 3: create mastering passes.",
+        "choose_source_playback": "Choose a source file before playback.",
+        "select_candidate_for_b": "Step 4 needed: select a candidate before listening to B.",
+        "missing_playback_file": "Cannot play missing file: {path}",
+        "now_playing": "Playing {label}",
+        "playback_stopped": "Playback stopped.",
+        "role_max_loudness": "Max loudness test",
+        "role_careful": "Careful comparison",
+        "role_fallback": "Clean fallback",
+        "role_recommended": "Recommended",
+        "role_target": "Your target version",
+        "suffix_max_loudness": "Max loudness",
+        "suffix_careful": "Careful comparison",
+        "suffix_fallback": "Clean fallback",
+        "version_rank": "Version {rank}: {name}",
+        "candidate_more_details": "Further details available in candidate panel.",
+        "details_selected": "Selected: {version}",
+        "details_role": "Role: {role}",
+        "details_use": "Use it when: {description}",
+        "details_output": "Output: {path}",
+        "details_score": "Score: {score:.1f}",
+        "details_metrics": "Output metrics: LUFS {lufs:.1f}, TP {peak:.1f}, LRA {lra:.1f}",
+        "details_delta": "Delta vs source: LUFS {lufs:+.1f}, LRA {lra:+.1f}",
+        "details_why": "Why choose it:",
+        "details_checklist": "Listening checklist:",
+        "checklist_loudness": "- At matched loudness, is it really better or just louder?",
+        "checklist_kick": "- Does the kick keep its attack?",
+        "checklist_sub": "- Does the sub stay controlled after limiting?",
+        "checklist_harsh": "- Do hats or synths become harsh or tiring?",
+        "checklist_sections": "- Test intro, drop, and break, not only the loudest section.",
+        "comparison_loudness_empty": "Select a version to compare loudness.",
+        "comparison_peak_empty": "Peak safety appears here.",
+        "comparison_lra_empty": "Dynamics change appears here.",
+        "comparison_score_empty": "Technical score appears here.",
+        "comparison_louder": "Louder",
+        "comparison_quieter": "Quieter",
+        "comparison_same_loudness": "Same loudness",
+        "comparison_more_headroom": "More headroom",
+        "comparison_hotter_peak": "Hotter peak",
+        "comparison_same_peak": "Same peak",
+        "comparison_more_dynamic": "More dynamic",
+        "comparison_tighter": "Tighter",
+        "comparison_dynamics_preserved": "Dynamics preserved",
+        "comparison_best": "Best compromise",
+        "comparison_alternative": "Alternative",
+        "comparison_score_verdict": "Technical compromise between loudness, safety, and dynamics.",
+        "table_verdict_best": "Best choice",
+        "table_verdict_loud": "Louder option",
+        "table_verdict_dynamic": "Keeps dynamics",
+        "table_verdict_safe": "Safer fallback",
+        "table_verdict_risky": "Check carefully",
+        "table_verdict_alternative": "Alternative",
+        "progress_rendering": "Rendering",
+        "progress_measuring": "Measuring",
+        "progress_scoring": "Scoring",
+        "progress_starting": "Starting",
+        "progress_complete": "100% complete",
+        "progress_percent": "{percent}% complete",
+        "progress_elapsed": "{elapsed} elapsed",
+        "task_analysis_validate": "Validate audio file",
+        "task_analysis_engine": "Check audio engine",
+        "task_analysis_measure": "Measure source loudness",
+        "task_analysis_profile": "Build source profile",
+        "task_analysis_ready": "Ready for mastering choices",
+        "task_render_prepare": "Prepare mastering session",
+        "task_render_create": "Render candidate masters",
+        "task_render_measure": "Measure each version",
+        "task_render_score": "Score technical choices",
+        "task_render_export": "Write session files",
+        "task_render_ready": "Ready for A/B choice",
+        "reason_already_hot": "source is already hot",
+        "reason_limited_dynamics": "limited dynamics need headroom",
+        "reason_healthy_dynamics": "healthy dynamics can take a louder pass",
+        "reason_room_for_gain": "source has room for gain",
+        "reason_balanced_default": "balanced default",
         "select_source_dialog": "Select source file",
         "select_output_dialog": "Select output folder",
         "select_config_dialog": "Select config file",
@@ -203,7 +302,8 @@ UI_TEXT = {
         "analyzed_story": "{name} is analyzed: {lufs:.1f} LUFS, {peak:.1f} dBTP, {lra:.1f} LU dynamics. Choose an objective, then create mastering passes.",
         "auto_recommendation": "Auto recommendation: {lufs:.1f} LUFS because {reason}.",
         "step2_complete": "Step 2 complete. Suggested target: {lufs:.1f} LUFS ({reason}).",
-        "step3_complete": "Step 3 complete. Step 4: select a candidate.",
+        "step3_complete": "Recommended version selected. Compare in A/B, or choose another version.",
+        "export_locked": "Listen to B, the selected master, to unlock export.",
         "selected_for_ab_export": "{version} is selected for A/B listening and export.",
         "render_complete": "Rendering complete. Review the recommended version.",
         "render_cancelled": "Render cancelled. Adjust settings or create mastering passes again.",
@@ -221,101 +321,108 @@ UI_TEXT = {
         "menu_choose_output": "Choisir le dossier de sortie",
         "menu_quit": "Quitter",
         "menu_maker": "Qui suis-je ?",
-        "tab_source": "Source",
-        "tab_versions": "Versions",
-        "tab_listen": "Écoute / Export",
+        "tab_source": "1. Source",
+        "tab_versions": "2. Versions",
+        "tab_listen": "3. A/B",
         "session": "Session",
-        "hero_title": "Assistant de mastering WAV/FLAC offline",
-        "hero_subtitle": "Analyse locale, passes clean LUFS mesurées, comparaison A/B, puis export. Beta {version}.",
-        "choose_file": "Choisir fichier",
+        "hero_title": "Assistant de mastering WAV/FLAC hors ligne",
+        "hero_subtitle": "Analyse locale, passes LUFS propres et mesurées, comparaison A/B, puis export. Beta {version}.",
+        "choose_file": "Choisir un fichier",
         "analyze_box": "Analyser la source",
         "source_selected": "Source choisie. Analyse-la pour débloquer les réglages de mastering.",
         "change_source": "Changer source",
         "analyze_source": "Analyser source",
         "analyzed": "Analysé",
         "processing_time": "Profondeur des passes",
-        "processing_fast": "Apercu rapide",
-        "processing_balanced": "Equilibre",
-        "processing_best": "Le plus soigne",
-        "processing_hint_fast": "Moins de passes offline testees. Pratique pour obtenir une direction vite.",
-        "processing_hint_balanced": "Passes offline normales. Le meilleur compromis entre attente et confiance.",
-        "processing_hint_best": "Plus de passes mesurees. Plus lent, mais le classement est mieux informe.",
+        "processing_fast": "Aperçu rapide",
+        "processing_balanced": "Équilibré",
+        "processing_best": "Le plus soigné",
+        "processing_hint_fast": "Moins de passes hors ligne testées. Pratique pour obtenir une direction rapidement.",
+        "processing_hint_balanced": "Passes hors ligne normales. Le meilleur compromis entre attente et confiance.",
+        "processing_hint_best": "Plus de passes mesurées. Plus lent, mais le classement est mieux informé.",
         "step_choose_source": "Étape 1 : choisis un fichier source.",
         "render_box": "Créer les passes de mastering",
-        "render_context_ready": "Source prête. Choisis une cible LUFS, puis rends les passes offline.",
-        "review_source": "Voir analyse source",
-        "hide_source": "Masquer analyse source",
-        "optional_config": "Config YAML optionnelle",
-        "mode_safe": "Propre / safe",
+        "render_context_ready": "Source prête. Choisis une cible LUFS, puis crée les passes hors ligne.",
+        "review_source": "Voir l’analyse source",
+        "hide_source": "Masquer l’analyse source",
+        "optional_config": "Configuration YAML optionnelle",
+        "mode_safe": "Propre / sûr",
         "mode_balanced": "Master équilibré",
         "mode_louder": "Plus fort",
         "destination_streaming": "Streaming propre",
-        "destination_soundcloud": "SoundCloud / DJ fort",
-        "destination_archive": "Archive safe",
-        "tp_strict": "True peak strict (plus safe après encodage)",
+        "destination_soundcloud": "SoundCloud / DJ puissant",
+        "destination_archive": "Archive sûre",
+        "tp_strict": "True peak strict (plus sûr après encodage)",
         "target_auto": "Recommandé auto",
         "target_streaming": "Master streaming propre (-14 LUFS)",
         "target_soundcloud": "SoundCloud fort propre (-10.5 LUFS)",
         "target_club": "Club / DJ fort (-9 LUFS)",
-        "target_hard": "Hard / raw test (-8 LUFS)",
-        "target_extreme": "Test extrême loudness (-7 LUFS)",
+        "target_hard": "Test hard / brut (-8 LUFS)",
+        "target_extreme": "Test de loudness extrême (-7 LUFS)",
         "hint_auto": "Auto utilise l’analyse source pour proposer une cible saine.",
         "hint_streaming": "Export propre et prudent pour les plateformes avec normalisation.",
         "hint_soundcloud": "Plus fort et direct pour SoundCloud, tout en restant raisonnablement propre.",
         "hint_club": "Plus de pression pour DJ sets et club ; écoute le kick et le sub.",
-        "hint_hard": "Test agressif hard techno/raw ; compare avant d’exporter.",
-        "hint_extreme": "Stress test seulement : gros risque de kick écrasé, hats durs et fatigue.",
+        "hint_hard": "Test agressif hard techno/brut ; compare avant d’exporter.",
+        "hint_extreme": "Test de stress uniquement : risque élevé de kick écrasé, charleys durs et fatigue.",
         "target_tooltip": "Loudness cible des passes de mastering. Plus proche de zéro = plus fort.",
-        "max_loudness": "Estimer le LUFS propre maximum",
-        "max_loudness_tip": "Teste plusieurs cibles LUFS plus fortes offline et classe le meilleur compromis loud/safe.",
-        "max_loudness_warning": "Avant export, écoute A/B et vérifie l’attaque du kick, le sub, la distorsion et la fatigue des hats.",
-        "ab_check": "Aller au check A/B",
-        "ab_unlock": "Le check A/B se débloque après création des versions.",
-        "choose_output": "Sortie",
-        "load_config": "Charger config",
-        "create_template": "Template YAML",
+        "max_loudness": "Estimer le niveau LUFS propre maximal",
+        "max_loudness_tip": "Teste plusieurs cibles LUFS plus fortes hors ligne et classe le meilleur compromis fort/sûr.",
+        "max_loudness_warning": "Avant export, écoute en A/B et vérifie l’attaque du kick, le sub, la distorsion et la fatigue des charleys.",
+        "ab_check": "Aller à la comparaison A/B",
+        "ab_unlock": "La comparaison A/B se débloque après création des versions.",
+        "choose_output": "Choisir la sortie",
+        "load_config": "Charger une config",
+        "create_template": "Modèle YAML",
         "show_advanced": "Afficher options avancées",
         "hide_advanced": "Masquer options avancées",
-        "create_versions": "Créer passes mastering",
+        "create_versions": "Créer les passes de mastering",
         "export_final": "Exporter la version sélectionnée",
-        "ready_render": "Prêt à rendre les passes de mastering offline.",
+        "ready_render": "Prêt à créer les passes de mastering hors ligne.",
         "cancel": "Annuler",
         "master_goal": "Objectif",
         "quick_target": "Cible rapide",
         "level_target": "Niveau cible",
         "usage": "Usage",
-        "output_folder": "Dossier sortie",
-        "config_file": "Config",
+        "output_folder": "Dossier de sortie",
+        "config_file": "Configuration",
         "source_analysis": "Analyse source",
         "not_analyzed": "Non analysé",
         "diagnostics_pending": "L’étape 2 apparaîtra ici après analyse.",
+        "diagnostic_already_hot": "Source déjà forte : privilégie des corrections transparentes et minimales.",
         "acoustic_note": "Les mesures sont des indicateurs techniques. La validation finale dépend du niveau d’écoute et de la pièce.",
         "profile": "Profil",
         "true_peak": "True peak",
         "dynamics": "Dynamique",
-        "show_waveform": "Afficher onde et diagnostics",
-        "hide_waveform": "Masquer onde et diagnostics",
+        "show_waveform": "Afficher l’onde et les diagnostics",
+        "hide_waveform": "Masquer l’onde et les diagnostics",
         "waveform_pending": "L’aperçu d’onde apparaît après sélection du fichier.",
         "selected_box": "Version sélectionnée",
         "best_box": "Meilleur compromis mesuré",
         "no_candidate_yet": "Aucune version sélectionnée",
         "candidate_pending": "Clique une ligne au-dessus pour mettre à jour la version sélectionnée.",
         "listen_selected": "Écouter cette version",
-        "save_note": "Sauver note d’écoute",
+        "save_note": "Enregistrer la note d’écoute",
         "chosen_version": "Version choisie",
         "score": "Score",
         "metrics": "Mesures",
-        "why_choose": "Pourquoi",
+        "why_choose": "Pourquoi la choisir",
         "rendered_file": "Fichier rendu",
         "next": "Suite",
         "rating": "Note (1-5)",
         "preferences": "Préférences",
-        "compare_export": "Comparer et exporter",
-        "play_source": "Lire source (A)",
-        "play_candidate": "Lire version sélectionnée (B)",
-        "stop": "Stop",
+        "compare_export": "Comparer A/B",
+        "final_export": "Export",
+        "play_source": "Écouter A",
+        "play_candidate": "Écouter B",
+        "stop": "Arrêter",
         "new_analysis": "Nouvelle analyse",
-        "playback_pending": "Étape 5 : sélectionne une version, puis compare A et B.",
+        "playback_pending": "Sélectionne une version B, compare-la à A, puis exporte celle que tu veux.",
+        "selected_b_title": "Version B",
+        "selected_b_empty": "Aucune version B sélectionnée pour l’instant.",
+        "selected_b_summary": "{version} · {verdict} · Score {score:.1f}",
+        "selected_b_metrics": "LUFS {lufs:.1f} · TP {peak:.1f} dBTP · LRA {lra:.1f} LU",
+        "ab_version": "Version B à comparer/exporter",
         "metric": "Mesure",
         "before": "Avant",
         "after": "Après",
@@ -325,29 +432,120 @@ UI_TEXT = {
         "show_history": "Afficher historique",
         "hide_history": "Masquer historique",
         "choose_version": "1. Choisir une version",
-        "choose_version_hint": "La ligne sélectionnée sert à l’écoute A/B et à l’export. Clique une autre ligne pour changer.",
+        "choose_version_empty_hint": "Les versions rendues apparaîtront ici après création des passes de mastering.",
+        "choose_version_hint": "Regarde d’abord l’avis, puis le score et les mesures. Sélectionne une ligne, puis compare/exporte en A/B.",
+        "compare_ab": "Comparer en A/B",
         "choice": "Rôle",
+        "verdict_label": "Avis",
         "version": "Version",
-        "show_scoring": "Afficher scoring",
-        "hide_scoring": "Masquer scoring",
+        "show_scoring": "Afficher le score détaillé",
+        "hide_scoring": "Masquer le score détaillé",
         "details_placeholder": "Étape 4 : sélectionne la version recommandée, ou une alternative à comparer.",
+        "export_complete_title": "Export terminé",
+        "export_complete_body": "{version} copiée vers :\n{destination}",
+        "export_complete_next": "Export terminé. Lance une nouvelle analyse quand tu es prêt.",
+        "select_rendered_candidate": "Choisis une version rendue avant d’exporter.",
+        "stale_candidate": "Cette version ne fait plus partie de la session actuelle. Recrée les passes de mastering.",
+        "missing_rendered_file": "Impossible d’exporter ce fichier rendu introuvable :\n{path}",
+        "export_failed": "L’export a échoué :\n{error}",
+        "select_note_candidate": "Choisis une version avant de sauver une note d’écoute.",
+        "note_saved": "Note sauvée pour {version} dans {path}",
+        "waveform_loading": "Chargement de l’aperçu d’onde...",
+        "source_preview_loading": "Chargement de l’aperçu source...",
+        "waveform_unavailable": "Aperçu d’onde indisponible pour ce fichier.",
+        "step3_create_versions": "Étape 2 terminée. Étape 3 : créer les passes de mastering.",
+        "choose_source_playback": "Choisis un fichier source avant l’écoute.",
+        "select_candidate_for_b": "Étape 4 requise : choisis une version avant d’écouter B.",
+        "missing_playback_file": "Impossible de lire ce fichier introuvable : {path}",
+        "now_playing": "Lecture {label}",
+        "playback_stopped": "Lecture arrêtée.",
+        "role_max_loudness": "Test loudness max",
+        "role_careful": "Comparaison prudente",
+        "role_fallback": "Secours propre",
+        "role_recommended": "Recommandée",
+        "role_target": "Version cible",
+        "suffix_max_loudness": "Loudness max",
+        "suffix_careful": "Comparaison prudente",
+        "suffix_fallback": "Secours propre",
+        "version_rank": "Version {rank} : {name}",
+        "candidate_more_details": "Détails complets disponibles dans le panneau candidat.",
+        "details_selected": "Sélection : {version}",
+        "details_role": "Rôle : {role}",
+        "details_use": "À utiliser si : {description}",
+        "details_output": "Sortie : {path}",
+        "details_score": "Score : {score:.1f}",
+        "details_metrics": "Mesures sortie : LUFS {lufs:.1f}, TP {peak:.1f}, LRA {lra:.1f}",
+        "details_delta": "Écart vs source : LUFS {lufs:+.1f}, LRA {lra:+.1f}",
+        "details_why": "Pourquoi la choisir :",
+        "details_checklist": "Liste de contrôle d’écoute :",
+        "checklist_loudness": "- À loudness égal, est-ce vraiment mieux ou juste plus fort ?",
+        "checklist_kick": "- Le kick garde-t-il son attaque ?",
+        "checklist_sub": "- Le sub reste-t-il contrôlé après limitation ?",
+        "checklist_harsh": "- Les charleys ou synthés deviennent-ils durs ou fatigants ?",
+        "checklist_sections": "- Teste intro, drop et break, pas seulement la section la plus forte.",
+        "comparison_loudness_empty": "Choisis une version pour comparer le loudness.",
+        "comparison_peak_empty": "La sécurité peak apparaîtra ici.",
+        "comparison_lra_empty": "Le changement de dynamique apparaîtra ici.",
+        "comparison_score_empty": "Le score technique apparaîtra ici.",
+        "comparison_louder": "Plus fort",
+        "comparison_quieter": "Moins fort",
+        "comparison_same_loudness": "Même loudness",
+        "comparison_more_headroom": "Plus de marge",
+        "comparison_hotter_peak": "Peak plus chaud",
+        "comparison_same_peak": "Même peak",
+        "comparison_more_dynamic": "Plus dynamique",
+        "comparison_tighter": "Plus serré",
+        "comparison_dynamics_preserved": "Dynamique préservée",
+        "comparison_best": "Meilleur compromis",
+        "comparison_alternative": "Alternative",
+        "comparison_score_verdict": "Compromis technique entre loudness, sécurité et dynamique.",
+        "table_verdict_best": "Meilleur choix",
+        "table_verdict_loud": "Option plus forte",
+        "table_verdict_dynamic": "Garde la dynamique",
+        "table_verdict_safe": "Solution plus sûre",
+        "table_verdict_risky": "À vérifier",
+        "table_verdict_alternative": "Alternative",
+        "progress_rendering": "Rendu",
+        "progress_measuring": "Mesure",
+        "progress_scoring": "Évaluation",
+        "progress_starting": "Démarrage",
+        "progress_complete": "100 % terminé",
+        "progress_percent": "{percent} % terminé",
+        "progress_elapsed": "{elapsed} écoulé",
+        "task_analysis_validate": "Valider le fichier audio",
+        "task_analysis_engine": "Vérifier le moteur audio",
+        "task_analysis_measure": "Mesurer le loudness source",
+        "task_analysis_profile": "Construire le profil source",
+        "task_analysis_ready": "Prêt pour les choix de mastering",
+        "task_render_prepare": "Préparer la session de mastering",
+        "task_render_create": "Rendre les masters candidats",
+        "task_render_measure": "Mesurer chaque version",
+        "task_render_score": "Noter les choix techniques",
+        "task_render_export": "Écrire les fichiers de session",
+        "task_render_ready": "Prêt pour le choix A/B",
+        "reason_already_hot": "la source est déjà forte",
+        "reason_limited_dynamics": "la dynamique limitée demande de la marge",
+        "reason_healthy_dynamics": "la dynamique saine accepte une passe plus forte",
+        "reason_room_for_gain": "la source a de la marge pour gagner en niveau",
+        "reason_balanced_default": "cible équilibrée par défaut",
         "select_source_dialog": "Choisir un fichier source",
         "select_output_dialog": "Choisir le dossier de sortie",
         "select_config_dialog": "Choisir un fichier config",
-        "create_config_dialog": "Créer un template OptiMaster",
-        "config_created_title": "Template config créé",
-        "config_created_body": "Template YAML commenté créé :\n{path}",
+        "create_config_dialog": "Créer un modèle OptiMaster",
+        "config_created_title": "Modèle de configuration créé",
+        "config_created_body": "Modèle YAML commenté créé :\n{path}",
         "choose_audio_first": "Choisis d’abord un fichier WAV ou FLAC.",
         "step_analyze_next": "Étape 1 terminée. Étape 2 : analyser la source.",
         "preparing_render": "Préparation du rendu...",
         "preparing_analysis": "Préparation de l’analyse...",
         "cancelling": "Annulation après l’étape FFmpeg en cours...",
         "selected_source_next": "Source choisie : {name}. Prochaine étape : analyse.",
-        "source_ready_story": "Source prête. Choisis une cible, puis rends les passes offline.",
+        "source_ready_story": "Source prête. Choisis une cible, puis crée les passes hors ligne.",
         "analyzed_story": "{name} est analysé : {lufs:.1f} LUFS, {peak:.1f} dBTP, {lra:.1f} LU de dynamique. Choisis un objectif, puis crée les passes de mastering.",
         "auto_recommendation": "Recommandation auto : {lufs:.1f} LUFS car {reason}.",
         "step2_complete": "Étape 2 terminée. Cible suggérée : {lufs:.1f} LUFS ({reason}).",
-        "step3_complete": "Étape 3 terminée. Étape 4 : sélectionne une version.",
+        "step3_complete": "Version recommandée sélectionnée. Compare en A/B, ou choisis une autre version.",
+        "export_locked": "Écoute B, le master sélectionné, pour débloquer l’export.",
         "selected_for_ab_export": "{version} est sélectionnée pour l’écoute A/B et l’export.",
         "render_complete": "Rendu terminé. Vérifie la version recommandée.",
         "render_cancelled": "Rendu annulé. Ajuste les réglages ou recrée les passes de mastering.",
@@ -364,12 +562,26 @@ PRESET_DISPLAY_NAMES = {
     "sweet_spot": "Balanced master",
     "gentle_glue": "Glue and punch",
 }
+PRESET_DISPLAY_NAMES_FR = {
+    "do_almost_nothing": "Polissage léger",
+    "transparent_trim": "Marge propre",
+    "safe_limit": "Loudness contrôlé",
+    "sweet_spot": "Master équilibré",
+    "gentle_glue": "Glue et punch",
+}
 PRESET_DISPLAY_DESCRIPTIONS = {
     "do_almost_nothing": "Small cleanup for tracks that are already close.",
     "transparent_trim": "Keeps the sound close to the source and makes room for playback safety.",
     "safe_limit": "Pushes level while keeping peaks under control.",
     "sweet_spot": "Balances loudness, clarity, and dynamics.",
     "gentle_glue": "Adds gentle compression for a more finished, connected feel.",
+}
+PRESET_DISPLAY_DESCRIPTIONS_FR = {
+    "do_almost_nothing": "Petit nettoyage pour les morceaux déjà proches du résultat final.",
+    "transparent_trim": "Garde le son proche de la source et ajoute une marge de sécurité.",
+    "safe_limit": "Pousse le niveau tout en gardant les peaks sous contrôle.",
+    "sweet_spot": "Équilibre loudness, clarté et dynamique.",
+    "gentle_glue": "Ajoute une compression légère pour un rendu plus fini et cohérent.",
 }
 CONFIG_TEMPLATE = """# OptiMaster config template
 # Save this file, edit only what you need, then load it in the app.
@@ -653,20 +865,25 @@ class ComparisonRow(QFrame):
 
 
 class PlaybackWaveform(QFrame):
+    seek_requested = Signal(int)
+
     def __init__(self) -> None:
         super().__init__()
         self.setObjectName("playbackWaveform")
-        self.setMinimumHeight(150)
+        self.setMinimumHeight(190)
         self._label = "No audio playing"
         self._path = ""
         self._bars = self._make_bars("")
         self._position = 0
         self._duration = 0
         self._is_playing = False
+        self._is_scrubbing = False
+        self._seek_rect = QRectF()
         self._phase = 0
         self._timer = QTimer(self)
         self._timer.setInterval(80)
         self._timer.timeout.connect(self._tick)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
 
     def set_track(self, path: Path, label: str) -> None:
         self._path = str(path)
@@ -708,12 +925,48 @@ class PlaybackWaveform(QFrame):
         seed = sum((idx + 1) * ord(char) for idx, char in enumerate(key or "optimaster"))
         bars: list[float] = []
         value = seed or 1
-        for idx in range(88):
+        for idx in range(180):
             value = (value * 1103515245 + 12345 + idx) & 0x7FFFFFFF
-            base = 0.18 + (value % 100) / 160
-            pulse = 0.18 * (1 + ((idx * 7 + seed) % 9)) / 9
-            bars.append(min(base + pulse, 0.95))
+            base = 0.16 + (value % 100) / 145
+            transient = 0.24 if (idx * 17 + seed) % 29 == 0 else 0.0
+            modulation = 0.08 * (1 + ((idx * 7 + seed) % 11)) / 11
+            bars.append(min(base + modulation + transient, 0.98))
         return bars
+
+    def _format_time(self, milliseconds: int) -> str:
+        seconds = max(milliseconds, 0) // 1000
+        minutes, seconds = divmod(seconds, 60)
+        return f"{minutes:02d}:{seconds:02d}"
+
+    def _seek_to_x(self, x: float) -> None:
+        if self._duration <= 0 or self._seek_rect.width() <= 0:
+            return
+        ratio = (x - self._seek_rect.left()) / self._seek_rect.width()
+        ratio = max(0.0, min(1.0, ratio))
+        self.seek_requested.emit(int(self._duration * ratio))
+
+    def mousePressEvent(self, event: object) -> None:
+        if hasattr(event, "button") and event.button() == Qt.MouseButton.LeftButton:
+            self._is_scrubbing = True
+            self._seek_to_x(event.position().x())
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: object) -> None:
+        if self._is_scrubbing:
+            self._seek_to_x(event.position().x())
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: object) -> None:
+        if self._is_scrubbing:
+            self._is_scrubbing = False
+            self._seek_to_x(event.position().x())
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
     def paintEvent(self, event: object) -> None:
         super().paintEvent(event)
@@ -722,38 +975,62 @@ class PlaybackWaveform(QFrame):
 
         rect = self.rect().adjusted(14, 12, -14, -12)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor("#10151b"))
-        painter.drawRoundedRect(rect, 10, 10)
+        painter.setBrush(QColor("#0d141a"))
+        painter.drawRoundedRect(rect, 8, 8)
 
+        header_rect = rect.adjusted(14, 8, -14, -8)
         painter.setPen(QColor("#b9c6ce"))
-        painter.drawText(rect.adjusted(12, 8, -12, -8), Qt.AlignmentFlag.AlignTop, self._label)
+        painter.drawText(header_rect, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft, self._label)
 
-        bars_rect = rect.adjusted(12, 38, -12, -14)
+        time_text = f"{self._format_time(self._position)} / {self._format_time(self._duration)}"
+        painter.setPen(QColor("#e5b94d"))
+        painter.drawText(header_rect, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight, time_text)
+
+        bars_rect = rect.adjusted(14, 48, -14, -28)
+        self._seek_rect = QRectF(bars_rect)
         if not self._bars:
             return
 
         progress = self._position / self._duration if self._duration else 0.0
         progress = max(0.0, min(progress, 1.0))
-        bar_gap = 3
-        bar_width = max(3, int((bars_rect.width() - bar_gap * (len(self._bars) - 1)) / len(self._bars)))
+        painter.setPen(QPen(QColor("#25313a"), 1))
+        for tick in range(0, 11):
+            x = bars_rect.left() + bars_rect.width() * tick / 10
+            painter.drawLine(int(x), int(bars_rect.top()), int(x), int(bars_rect.bottom()))
+        painter.setPen(QPen(QColor("#31404a"), 1))
+        painter.drawLine(int(bars_rect.left()), int(bars_rect.center().y()), int(bars_rect.right()), int(bars_rect.center().y()))
+
+        bar_gap = 2
+        bar_width = max(2, int((bars_rect.width() - bar_gap * (len(self._bars) - 1)) / len(self._bars)))
         center_y = bars_rect.center().y()
-        max_height = bars_rect.height() * 0.82
+        max_height = bars_rect.height() * 0.48
 
         for idx, amplitude in enumerate(self._bars):
             x = bars_rect.left() + idx * (bar_width + bar_gap)
-            animated = amplitude
-            if self._is_playing:
-                animated += 0.08 * (((idx + self._phase) % 12) / 12)
+            animated = amplitude + (0.025 * (((idx + self._phase) % 18) / 18) if self._is_playing else 0)
             height = max(8, min(max_height, max_height * animated))
-            y = center_y - height / 2
+            y = center_y - height
             played = idx / max(len(self._bars) - 1, 1) <= progress
-            color = QColor("#2ac6a8" if played else "#2d3a45")
+            color = QColor("#2dd4bf" if played else "#51616d")
             painter.setBrush(color)
-            painter.drawRoundedRect(QRectF(x, y, bar_width, height), 3, 3)
+            painter.setPen(QPen(QColor("#a9bac5" if not played else "#99f6e4"), 1))
+            painter.drawRoundedRect(QRectF(x, y, bar_width, height * 2), 2, 2)
+
+        overview_rect = QRectF(rect.left() + 14, rect.bottom() - 18, rect.width() - 28, 8)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor("#182229"))
+        painter.drawRoundedRect(overview_rect, 3, 3)
+        painter.setBrush(QColor("#2dd4bf"))
+        painter.drawRoundedRect(
+            QRectF(overview_rect.left(), overview_rect.top(), overview_rect.width() * progress, overview_rect.height()),
+            3,
+            3,
+        )
 
         playhead_x = bars_rect.left() + bars_rect.width() * progress
         painter.setBrush(QColor("#e5b94d"))
-        painter.drawRoundedRect(QRectF(playhead_x - 2, bars_rect.top(), 4, bars_rect.height()), 2, 2)
+        painter.setPen(QPen(QColor("#f8e2a0"), 1))
+        painter.drawRoundedRect(QRectF(playhead_x - 2, bars_rect.top() - 8, 4, bars_rect.height() + 16), 2, 2)
 
 
 class RenderBusyOverlay(QWidget):
@@ -762,14 +1039,16 @@ class RenderBusyOverlay(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setObjectName("renderBusyOverlay")
         self._message = "Creating mastering passes..."
+        self._tasks: list[tuple[str, str]] = []
         self._phase = 0
         self._timer = QTimer(self)
         self._timer.setInterval(70)
         self._timer.timeout.connect(self._tick)
         self.hide()
 
-    def start(self, message: str) -> None:
+    def start(self, message: str, tasks: list[tuple[str, str]] | None = None) -> None:
         self._message = message
+        self._tasks = tasks or []
         self._phase = 0
         self._timer.start()
         self.show()
@@ -784,6 +1063,10 @@ class RenderBusyOverlay(QWidget):
         self._message = message
         self.update()
 
+    def set_tasks(self, tasks: list[tuple[str, str]]) -> None:
+        self._tasks = tasks
+        self.update()
+
     def _tick(self) -> None:
         self._phase = (self._phase + 12) % 360
         self.update()
@@ -791,33 +1074,62 @@ class RenderBusyOverlay(QWidget):
     def paintEvent(self, event: object) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.fillRect(self.rect(), QColor(9, 9, 11, 52))
+        painter.fillRect(self.rect(), QColor(9, 9, 11, 218))
 
-        panel_width = min(560, max(360, self.width() - 120))
-        panel_height = 104
+        panel_width = min(640, max(420, self.width() - 160))
+        panel_height = 124 + len(self._tasks) * 24 if self._tasks else 118
         panel = QRectF(
             (self.width() - panel_width) / 2,
             (self.height() - panel_height) / 2,
             panel_width,
             panel_height,
         )
-        painter.setPen(QPen(QColor("#3f3f46"), 1))
+        painter.setPen(QPen(QColor("#52525b"), 1))
         painter.setBrush(QColor("#111113"))
-        painter.drawRoundedRect(panel, 12, 12)
+        painter.drawRoundedRect(panel, 10, 10)
 
-        spinner = QRectF(panel.left() + 24, panel.top() + 33, 38, 38)
+        spinner = QRectF(panel.left() + 28, panel.top() + 40, 38, 38)
         painter.setPen(QPen(QColor("#27272a"), 4))
         painter.drawArc(spinner, 0, 360 * 16)
         painter.setPen(QPen(QColor("#2dd4bf"), 4))
         painter.drawArc(spinner, -self._phase * 16, 110 * 16)
 
-        text_rect = panel.adjusted(78, 18, -22, -18)
+        text_rect = panel.adjusted(86, 24, -26, -22)
         painter.setPen(QColor("#fafafa"))
         painter.drawText(
             text_rect,
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter | Qt.TextFlag.TextWordWrap,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap,
             self._message,
         )
+
+        if not self._tasks:
+            return
+
+        task_top = panel.top() + 76
+        task_left = panel.left() + 88
+        for row, (label, state) in enumerate(self._tasks):
+            y = task_top + row * 24
+            if state == "done":
+                fill = QColor("#2dd4bf")
+                border = QColor("#7dd3fc")
+                text_color = QColor("#d4d4d8")
+            elif state == "active":
+                fill = QColor("#e5b94d")
+                border = QColor("#fde68a")
+                text_color = QColor("#fafafa")
+            else:
+                fill = QColor("#18181b")
+                border = QColor("#52525b")
+                text_color = QColor("#71717a")
+            painter.setPen(QPen(border, 1))
+            painter.setBrush(fill)
+            painter.drawEllipse(QRectF(task_left, y + 3, 12, 12))
+            painter.setPen(text_color)
+            painter.drawText(
+                QRectF(task_left + 22, y - 1, panel_width - 132, 22),
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                label,
+            )
 
 
 class AnimatedProgressBar(QProgressBar):
@@ -917,8 +1229,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle(f"{APP_TITLE} - {APP_DISPLAY_VERSION}")
         self.setWindowIcon(app_icon())
-        self.resize(1180, 760)
-        self.setMinimumSize(1040, 680)
+        self.setMinimumSize(860, 620)
+        self.resize(self._initial_window_size())
         self.settings = QSettings("OptiMaster", "OptiMaster")
         self.language = str(self.settings.value("language", "en"))
         if self.language not in UI_TEXT:
@@ -944,9 +1256,11 @@ class MainWindow(QMainWindow):
         self.audio_output = QAudioOutput(self)
         self.audio_player.setAudioOutput(self.audio_output)
         self.current_playback: str | None = None
+        self.ab_validated_candidate: CandidateResult | None = None
         self._progress_started_at: float | None = None
         self._last_progress_message: str | None = None
         self._last_progress_percent: int = 0
+        self._last_progress_task_index: int = 0
         self._progress_timer = QTimer(self)
         self._progress_timer.setInterval(1000)
         self._progress_timer.timeout.connect(self._refresh_elapsed_progress)
@@ -960,6 +1274,7 @@ class MainWindow(QMainWindow):
 
     def _build_ui(self) -> None:
         central = QWidget()
+        central.setObjectName("centralShell")
         root = QVBoxLayout(central)
         root.setContentsMargins(24, 22, 24, 24)
         root.setSpacing(18)
@@ -967,12 +1282,14 @@ class MainWindow(QMainWindow):
         self.brand_header = self._build_brand_header()
         self.brand_header.setMaximumWidth(CONTENT_MAX_WIDTH)
         self.brand_header.setMinimumWidth(CONTENT_MIN_WIDTH)
+        self.brand_header.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Maximum)
         root.addWidget(self.brand_header, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         self.workflow_tabs = QTabWidget()
         self.workflow_tabs.setObjectName("workflowTabs")
         self.workflow_tabs.setMaximumWidth(CONTENT_MAX_WIDTH)
         self.workflow_tabs.setMinimumWidth(CONTENT_MIN_WIDTH)
+        self.workflow_tabs.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
 
         source_step = QWidget()
         source_layout = QVBoxLayout(source_step)
@@ -1003,6 +1320,9 @@ class MainWindow(QMainWindow):
         root.addWidget(self.workflow_tabs, stretch=1, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         self.setCentralWidget(central)
+        self._sync_desktop_content_width()
+        self.render_overlay = RenderBusyOverlay(central)
+        self._position_render_overlay()
         self._build_menu()
 
     def _scrollable_step(self, content: QWidget) -> QScrollArea:
@@ -1125,6 +1445,7 @@ class MainWindow(QMainWindow):
         self.processing_hint_label.setWordWrap(True)
         self.status_label = QLabel("Step 1: choose a source file to begin.")
         self.status_label.setWordWrap(True)
+        self.status_label.setMinimumHeight(44)
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
@@ -1240,7 +1561,7 @@ class MainWindow(QMainWindow):
         self.advanced_options_visible = False
 
         self.optimize_button = QPushButton("Create mastering passes")
-        self.export_button = QPushButton("Export selected version")
+        self.export_button = QPushButton("Export selected master (B)")
         self.optimize_button.setObjectName("stepAction")
         self.export_button.setObjectName("primaryAction")
         set_lucide_icon(self.optimize_button, "audio-lines", CTA_ICON_COLOR)
@@ -1251,6 +1572,7 @@ class MainWindow(QMainWindow):
         self.render_status_label.setObjectName("renderStatus")
         self.render_status_label.setWordWrap(True)
         self.render_status_label.setMinimumHeight(52)
+        self.export_button.setToolTip(self._t("select_rendered_candidate"))
         self.render_progress_bar = AnimatedProgressBar()
         self.render_progress_bar.setRange(0, 100)
         self.render_progress_bar.setValue(0)
@@ -1331,7 +1653,6 @@ class MainWindow(QMainWindow):
             self.config_button,
             self.template_button,
         ]
-        self.render_overlay = RenderBusyOverlay(self.render_box)
         return self.render_box
 
     def _build_source_analysis(self) -> QGroupBox:
@@ -1433,7 +1754,8 @@ class MainWindow(QMainWindow):
         self.rating_spin.setRange(1, 5)
         self.rating_spin.setValue(3)
         self.rating_spin.setMinimumHeight(44)
-        self.listen_selected_button = QPushButton("Listen to this version")
+        self.listen_selected_button = QPushButton("Compare in A/B")
+        self.listen_selected_button.setObjectName("stepAction")
         self.listen_selected_button.setMinimumHeight(44)
         self.listen_selected_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         set_lucide_icon(self.listen_selected_button, "headphones")
@@ -1444,6 +1766,12 @@ class MainWindow(QMainWindow):
         self.save_note_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         set_lucide_icon(self.save_note_button, "save")
         self.save_note_button.clicked.connect(self._save_listening_note)
+        self.new_analysis_button = QPushButton("New analysis")
+        self.new_analysis_button.setObjectName("secondaryAction")
+        self.new_analysis_button.setMinimumHeight(44)
+        set_lucide_icon(self.new_analysis_button, "refresh")
+        self.new_analysis_button.clicked.connect(self._start_new_analysis)
+        self.new_analysis_button.setVisible(False)
 
         self.best_row_labels: dict[str, QLabel] = {}
 
@@ -1463,7 +1791,9 @@ class MainWindow(QMainWindow):
         add_best_row(5, "next", "Next", self.listen_selected_button)
         add_best_row(6, "rating", "Rating (1-5)", self.rating_spin)
         add_best_row(7, "preferences", "Preferences", self.save_note_button)
-        for row in (5, 6, 7):
+        add_best_row(8, "new_analysis", "New analysis", self.new_analysis_button)
+        self.best_row_labels["new_analysis"].setVisible(False)
+        for row in (5, 6, 7, 8):
             best_layout.setRowMinimumHeight(row, 48)
         return self.best_box
 
@@ -1471,35 +1801,57 @@ class MainWindow(QMainWindow):
         self.listening_box = QGroupBox("Compare and export")
         layout = QVBoxLayout(self.listening_box)
 
+        selector_row = QHBoxLayout()
+        self.ab_version_label = QLabel("B version to compare/export")
+        self.ab_version_label.setObjectName("formLabel")
+        self.ab_version_combo = QComboBox()
+        self.ab_version_combo.currentIndexChanged.connect(self._select_candidate_from_ab_combo)
+        selector_row.addWidget(self.ab_version_label)
+        selector_row.addWidget(self.ab_version_combo, stretch=1)
+
         listening_row = QHBoxLayout()
         self.play_source_button = QPushButton("Play source (A)")
         self.play_candidate_button = QPushButton("Play selected version (B)")
         self.stop_audio_button = QPushButton("Stop")
-        self.new_analysis_button = QPushButton("New analysis")
         self.play_source_button.setObjectName("secondaryAction")
         self.play_candidate_button.setObjectName("secondaryAction")
         self.stop_audio_button.setObjectName("secondaryAction")
-        self.new_analysis_button.setObjectName("primaryAction")
         set_lucide_icon(self.play_source_button, "play")
         set_lucide_icon(self.play_candidate_button, "headphones")
         set_lucide_icon(self.stop_audio_button, "square")
-        set_lucide_icon(self.new_analysis_button, "refresh", PRIMARY_ICON_COLOR)
         self.play_source_button.clicked.connect(self._play_source)
         self.play_candidate_button.clicked.connect(self._play_selected_candidate)
         self.stop_audio_button.clicked.connect(self._stop_playback)
-        self.new_analysis_button.clicked.connect(self._start_new_analysis)
-        self.new_analysis_button.setVisible(False)
-        listening_row.addWidget(self.play_source_button)
-        listening_row.addWidget(self.play_candidate_button)
-        listening_row.addWidget(self.stop_audio_button)
-        listening_row.addWidget(self.export_button)
-        listening_row.addWidget(self.new_analysis_button)
+        listening_row.addWidget(self.play_source_button, stretch=1)
+        listening_row.addWidget(self.play_candidate_button, stretch=1)
+        listening_row.addWidget(self.stop_audio_button, stretch=1)
+        listening_row.addWidget(self.export_button, stretch=1)
+
+        self.selected_b_card = QFrame()
+        self.selected_b_card.setObjectName("selectedBCard")
+        selected_b_layout = QGridLayout(self.selected_b_card)
+        selected_b_layout.setContentsMargins(14, 12, 14, 12)
+        selected_b_layout.setHorizontalSpacing(12)
+        selected_b_layout.setVerticalSpacing(4)
+        self.selected_b_title_label = QLabel("Selected B")
+        self.selected_b_title_label.setObjectName("selectedBTitle")
+        self.selected_b_summary_label = QLabel("No B version selected yet.")
+        self.selected_b_summary_label.setObjectName("selectedBSummary")
+        self.selected_b_summary_label.setWordWrap(True)
+        self.selected_b_metrics_label = QLabel("--")
+        self.selected_b_metrics_label.setObjectName("selectedBMetrics")
+        self.selected_b_metrics_label.setWordWrap(True)
+        selected_b_layout.addWidget(self.selected_b_title_label, 0, 0)
+        selected_b_layout.addWidget(self.selected_b_summary_label, 0, 1)
+        selected_b_layout.addWidget(self.selected_b_metrics_label, 1, 1)
+        selected_b_layout.setColumnStretch(1, 1)
 
         self.playback_label = QLabel("Step 5: select a candidate, then compare A and B.")
         self.playback_label.setWordWrap(True)
         self.playback_waveform = PlaybackWaveform()
         self.audio_player.positionChanged.connect(self.playback_waveform.set_position)
         self.audio_player.durationChanged.connect(self.playback_waveform.set_duration)
+        self.playback_waveform.seek_requested.connect(self.audio_player.setPosition)
 
         self.before_after_panel = QFrame()
         self.before_after_panel.setObjectName("beforeAfterPanel")
@@ -1546,12 +1898,12 @@ class MainWindow(QMainWindow):
         set_lucide_icon(self.history_button, "history")
         self.history_button.clicked.connect(self._toggle_history)
 
+        layout.addLayout(selector_row)
         layout.addLayout(listening_row)
+        layout.addWidget(self.selected_b_card)
         layout.addWidget(self.playback_waveform)
         layout.addWidget(self.playback_label)
         layout.addWidget(self.before_after_panel)
-        layout.addWidget(self.history_button)
-        layout.addWidget(self.history_table)
         return self.listening_box
 
     def _build_results(self) -> QGroupBox:
@@ -1564,8 +1916,8 @@ class MainWindow(QMainWindow):
         self.results_hint_label.setObjectName("statusHint")
         self.results_hint_label.setWordWrap(True)
 
-        self.results_table = QTableWidget(0, 6)
-        self.results_table.setHorizontalHeaderLabels(["Role", "Version", "Score", "LUFS", "TP", "LRA"])
+        self.results_table = QTableWidget(0, 7)
+        self.results_table.setHorizontalHeaderLabels(["Role", "Version", "Verdict", "Score", "LUFS", "TP", "LRA"])
         self.results_table.setAlternatingRowColors(True)
         self.results_table.setShowGrid(False)
         self.results_table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -1579,6 +1931,14 @@ class MainWindow(QMainWindow):
         self.results_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.results_table.itemSelectionChanged.connect(self._update_selected_candidate_details)
         self.results_table.cellDoubleClicked.connect(lambda *_args: self.workflow_tabs.setCurrentIndex(2))
+        self.results_table.itemActivated.connect(lambda *_args: self.workflow_tabs.setCurrentIndex(2))
+
+        self.results_compare_button = QPushButton("Compare in A/B")
+        self.results_compare_button.setObjectName("stepAction")
+        self.results_compare_button.setMinimumHeight(44)
+        set_lucide_icon(self.results_compare_button, "headphones", CTA_ICON_COLOR)
+        self.results_compare_button.clicked.connect(lambda: self.workflow_tabs.setCurrentIndex(2))
+        self.results_compare_button.setVisible(False)
 
         self.details_button = QPushButton("Show scoring details")
         self.details_button.setObjectName("secondaryAction")
@@ -1594,6 +1954,7 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(self.results_hint_label)
         layout.addWidget(self.results_table)
+        layout.addWidget(self.results_compare_button)
         layout.addWidget(self.details_button)
         layout.addWidget(self.details_panel)
         return self.results_box
@@ -1602,7 +1963,8 @@ class MainWindow(QMainWindow):
         header = self.results_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        for column in range(2, self.results_table.columnCount()):
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        for column in range(3, self.results_table.columnCount()):
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
 
     def _apply_history_table_layout(self) -> None:
@@ -1757,7 +2119,7 @@ class MainWindow(QMainWindow):
         if self.current_session is None:
             self.best_labels["name"].setText(self._t("no_candidate_yet"))
             self.best_labels["reasons"].setText(self._t("candidate_pending"))
-        self.listen_selected_button.setText(self._t("listen_selected"))
+        self.listen_selected_button.setText(self._t("compare_ab"))
         self.save_note_button.setText(self._t("save_note"))
         for key, label in self.best_row_labels.items():
             label.setText(self._t(key))
@@ -1766,7 +2128,9 @@ class MainWindow(QMainWindow):
         self.play_source_button.setText(self._t("play_source"))
         self.play_candidate_button.setText(self._t("play_candidate"))
         self.stop_audio_button.setText(self._t("stop"))
+        self.ab_version_label.setText(self._t("ab_version"))
         self.new_analysis_button.setText(self._t("new_analysis"))
+        self.selected_b_title_label.setText(self._t("selected_b_title"))
         if self.current_playback is None:
             self.playback_label.setText(self._t("playback_pending"))
         for key, label in self.comparison_header_labels.items():
@@ -1775,13 +2139,15 @@ class MainWindow(QMainWindow):
         self.comparison_rows["peak"].metric_label.setText(self._t("true_peak"))
         self.comparison_rows["lra"].metric_label.setText(self._t("dynamics"))
         self.comparison_rows["score"].metric_label.setText(self._t("score"))
+        self._populate_selected_b_summary(self._selected_candidate())
+        self._sync_ab_version_combo()
         self.history_button.setText(self._t("hide_history") if not self.history_table.isHidden() else self._t("show_history"))
         self.history_table.setHorizontalHeaderLabels(["Date (UTC)", "Session", self._t("master_goal"), self._t("best_box"), self._t("tab_source")])
 
-        self.results_box.setTitle(self._t("choose_version"))
-        self.results_hint_label.setText(self._t("choose_version_hint"))
+        self._sync_results_guidance()
+        self.results_compare_button.setText(self._t("compare_ab"))
         self.results_table.setHorizontalHeaderLabels(
-            [self._t("choice"), self._t("version"), self._t("score"), "LUFS", "TP", "LRA"]
+            [self._t("choice"), self._t("version"), self._t("verdict_label"), self._t("score"), "LUFS", "TP", "LRA"]
         )
         self.details_button.setText(self._t("hide_scoring") if self.details_panel.isVisible() else self._t("show_scoring"))
         self.details_panel.setPlaceholderText(self._t("details_placeholder"))
@@ -1840,16 +2206,19 @@ class MainWindow(QMainWindow):
                 background: #121219;
                 color: #a6a0aa;
                 border: 1px solid #2b2b33;
-                border-radius: 12px;
+                border-radius: 8px;
                 margin-right: 10px;
                 padding: 12px 24px;
-                min-width: 136px;
+                min-width: 118px;
             }
             QTabBar::tab:selected {
                 background: #0fb7a7;
-                border-color: #e5b94d;
+                border-color: #0fb7a7;
                 color: #071111;
                 font-weight: 700;
+            }
+            QTabBar::tab:focus {
+                border: 2px solid #e5b94d;
             }
             QTabBar::tab:disabled {
                 color: #52525b;
@@ -1946,23 +2315,23 @@ class MainWindow(QMainWindow):
             }
             #statusHint {
                 color: #a1a1aa;
-                background: #09090b;
-                border: 1px solid #27272a;
+                background: transparent;
+                border: 1px solid #202026;
                 border-radius: 8px;
                 padding: 9px 12px;
             }
             #warningHint {
-                color: #e5b94d;
-                background: #18130a;
+                color: #f6c95f;
+                background: #1b1406;
                 border: 0;
-                border-left: 3px solid #e5b94d;
+                border-left: 3px solid #d99a2b;
                 border-radius: 8px;
                 padding: 8px 12px;
             }
             #renderStatus {
                 color: #e4e4e7;
-                background: #09090b;
-                border: 1px solid #18181b;
+                background: transparent;
+                border: 1px solid #202026;
                 border-radius: 8px;
                 padding: 8px 10px;
             }
@@ -1973,10 +2342,35 @@ class MainWindow(QMainWindow):
             }
             #storyLabel {
                 color: #e4e4e7;
-                background: #09090b;
-                border: 1px solid #18181b;
+                background: transparent;
+                border: 1px solid #202026;
                 border-radius: 8px;
                 padding: 10px 12px;
+            }
+            #selectedBCard {
+                background: #111113;
+                border: 1px solid #3f3f46;
+                border-left: 4px solid #e5b94d;
+                border-radius: 8px;
+            }
+            #selectedBTitle {
+                color: #e5b94d;
+                background: transparent;
+                font-size: 12px;
+                font-weight: 800;
+                min-width: 132px;
+            }
+            #selectedBSummary {
+                color: #fafafa;
+                background: transparent;
+                font-size: 15px;
+                font-weight: 800;
+            }
+            #selectedBMetrics {
+                color: #a1a1aa;
+                background: transparent;
+                font-size: 12px;
+                font-weight: 600;
             }
             #playbackWaveform {
                 border: 1px solid #27272a;
@@ -2030,16 +2424,20 @@ class MainWindow(QMainWindow):
                 padding: 6px 0;
             }
             QPushButton {
-                background: #14b8a6;
-                border: 0;
+                background: #18181b;
+                border: 1px solid #3f3f46;
                 border-radius: 8px;
                 padding: 10px 14px;
-                color: #042f2e;
+                color: #f4f4f5;
                 font-weight: 700;
                 min-height: 40px;
             }
             QPushButton:hover {
-                background: #2dd4bf;
+                background: #27272a;
+            }
+            QPushButton:focus {
+                border: 2px solid #e5b94d;
+                padding: 8px 12px;
             }
             QPushButton:disabled {
                 background: #27272a;
@@ -2052,6 +2450,10 @@ class MainWindow(QMainWindow):
             #primaryAction:hover {
                 background: #f0c96a;
             }
+            #primaryAction:disabled {
+                background: #3a321d;
+                color: #8f7b42;
+            }
             #secondaryAction {
                 background: #18181b;
                 border: 1px solid #3f3f46;
@@ -2059,6 +2461,11 @@ class MainWindow(QMainWindow):
             }
             #secondaryAction:hover {
                 background: #27272a;
+            }
+            #secondaryAction:disabled {
+                background: #18181b;
+                border-color: #27272a;
+                color: #5f5f68;
             }
             #stepAction {
                 background: #14b8a6;
@@ -2069,8 +2476,8 @@ class MainWindow(QMainWindow):
                 background: #2dd4bf;
             }
             #stepAction:disabled {
-                background: #27272a;
-                color: #71717a;
+                background: #143532;
+                color: #6b8985;
             }
             #utilityAction {
                 background: transparent;
@@ -2090,11 +2497,12 @@ class MainWindow(QMainWindow):
                 spacing: 8px;
                 color: #f4f4f5;
                 padding: 4px 0;
+                min-height: 36px;
             }
             QCheckBox::indicator {
-                width: 16px;
-                height: 16px;
-                border-radius: 4px;
+                width: 18px;
+                height: 18px;
+                border-radius: 5px;
                 border: 2px solid #a1a1aa;
                 background: #18181b;
             }
@@ -2106,6 +2514,12 @@ class MainWindow(QMainWindow):
                 border-color: #2dd4bf;
                 background: #14b8a6;
             }
+            QCheckBox:focus {
+                color: #fafafa;
+            }
+            QCheckBox::indicator:focus {
+                border-color: #e5b94d;
+            }
             QCheckBox::indicator:checked:hover {
                 border-color: #5eead4;
                 background: #2dd4bf;
@@ -2115,7 +2529,7 @@ class MainWindow(QMainWindow):
                 background: #18181b;
             }
             QSlider {
-                min-height: 30px;
+                min-height: 38px;
             }
             QSlider::groove:horizontal {
                 height: 6px;
@@ -2129,10 +2543,10 @@ class MainWindow(QMainWindow):
             QSlider::handle:horizontal {
                 background: #e5b94d;
                 border: 2px solid #0b0b0f;
-                width: 18px;
-                height: 18px;
-                margin: -7px 0;
-                border-radius: 9px;
+                width: 22px;
+                height: 22px;
+                margin: -9px 0;
+                border-radius: 11px;
             }
             QSlider::handle:horizontal:disabled {
                 background: #71717a;
@@ -2145,7 +2559,7 @@ class MainWindow(QMainWindow):
                 selection-background-color: #14b8a6;
                 min-height: 38px;
             }
-            QLineEdit:focus, QComboBox:focus, QPlainTextEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {
+            QLineEdit:focus, QComboBox:focus, QPlainTextEdit:focus, QTableWidget:focus, QSpinBox:focus, QDoubleSpinBox:focus {
                 border: 1px solid #e5b94d;
             }
             QComboBox {
@@ -2201,6 +2615,9 @@ class MainWindow(QMainWindow):
                 background: #14b8a6;
                 color: #042f2e;
             }
+            QTableWidget::item {
+                padding: 6px 8px;
+            }
             QProgressBar {
                 border: 1px solid #27272a;
                 border-radius: 999px;
@@ -2209,7 +2626,7 @@ class MainWindow(QMainWindow):
                 min-height: 16px;
             }
             QProgressBar::chunk {
-                background: #38bdf8;
+                background: #14b8a6;
                 border-radius: 999px;
             }
             QScrollBar:vertical {
@@ -2311,7 +2728,9 @@ class MainWindow(QMainWindow):
         if previous_path != path_obj:
             self.current_analysis = None
             self.current_session = None
+            self.ab_validated_candidate = None
             self._clear_results()
+            self.best_row_labels["new_analysis"].setVisible(False)
             self.new_analysis_button.setVisible(False)
             self.source_details_panel.setVisible(False)
             self.source_details_button.setText(self._t("show_waveform"))
@@ -2399,24 +2818,30 @@ class MainWindow(QMainWindow):
         self._progress_started_at = time.monotonic()
         self._last_progress_message = None
         self._last_progress_percent = 0
+        self._last_progress_task_index = 0
         self._progress_timer.start()
         self.current_output_dir = Path(request.output_dir)
         if request.kind == "optimize":
             self.source_box.setVisible(False)
-            self.source_review_button.setText("Review source analysis")
+            self.source_review_button.setText(self._t("review_source"))
             self.render_progress_bar.setValue(0)
             self.render_progress_bar.setVisible(True)
             self.render_progress_bar.start_animation()
             self.render_work_pulse.start()
             self.render_status_label.setText(self._t("preparing_render"))
+            self.render_status_label.setMinimumHeight(168)
             self.cancel_render_button.setVisible(True)
             self.cancel_render_button.setEnabled(True)
             self._position_render_overlay()
-            self.render_overlay.start("Creating mastering passes...")
+            tasks = self._progress_task_states(request.kind, self._t("preparing_render"), 0)
+            self.render_status_label.setText(self._rich_progress_text(self._t("preparing_render"), 0, animated=True, tasks=tasks))
+            self.render_overlay.start(self._plain_progress_text(self._t("preparing_render"), 0), tasks=tasks)
         else:
             self.progress_bar.setValue(0)
             self.progress_bar.setVisible(True)
-            self.status_label.setText(self._t("preparing_analysis"))
+            self.status_label.setMinimumHeight(136)
+            tasks = self._progress_task_states(request.kind, self._t("preparing_analysis"), 0)
+            self.status_label.setText(self._rich_progress_text(self._t("preparing_analysis"), 0, tasks=tasks))
         self._set_busy(True)
 
         self._thread = QThread(self)
@@ -2455,21 +2880,24 @@ class MainWindow(QMainWindow):
         self._progress_started_at = None
         self._last_progress_message = None
         self._last_progress_percent = 0
+        self._last_progress_task_index = 0
         self._set_busy(False)
         if finished_kind == "optimize":
             self.render_progress_bar.stop_animation()
             self.render_work_pulse.stop()
             self.render_progress_bar.setVisible(False)
             self.cancel_render_button.setVisible(False)
+            self.render_status_label.setMinimumHeight(52)
             self.render_overlay.stop()
         else:
+            self.status_label.setMinimumHeight(44)
             self.progress_bar.setVisible(False)
         self._update_actions()
 
     def _on_progress(self, message: str, percent: int) -> None:
         message = self._display_progress_message(message)
         self._last_progress_message = message
-        self._last_progress_percent = percent
+        self._last_progress_percent = max(self._last_progress_percent, percent)
         self._refresh_elapsed_progress()
 
     def _refresh_elapsed_progress(self) -> None:
@@ -2480,11 +2908,14 @@ class MainWindow(QMainWindow):
         if message is None:
             message = self._t("preparing_render") if self._active_worker_kind == "optimize" else self._t("preparing_analysis")
         if self._active_worker_kind == "optimize":
-            self.render_status_label.setText(self._rich_progress_text(message, percent, animated=True))
+            tasks = self._progress_task_states(self._active_worker_kind, message, percent)
+            self.render_status_label.setText(self._rich_progress_text(message, percent, animated=True, tasks=tasks))
             self.render_progress_bar.setValue(percent)
             self.render_overlay.set_message(self._plain_progress_text(message, percent))
+            self.render_overlay.set_tasks(tasks)
             return
-        self.status_label.setText(self._rich_progress_text(message, percent))
+        tasks = self._progress_task_states(self._active_worker_kind, message, percent)
+        self.status_label.setText(self._rich_progress_text(message, percent, tasks=tasks))
         self.progress_bar.setValue(percent)
 
     def _on_worker_finished(self, result: object) -> None:
@@ -2512,6 +2943,7 @@ class MainWindow(QMainWindow):
         if isinstance(result, OptimizationSession):
             self.current_analysis = result.analysis
             self.current_session = result
+            self.ab_validated_candidate = None
             self._populate_analysis(result.analysis)
             self._populate_session(result)
             if self.current_output_dir is not None:
@@ -2554,27 +2986,28 @@ class MainWindow(QMainWindow):
         self.metric_labels["lra"].setText(format_metric(metrics.lra_lu, "LU"))
         diagnostics = list(analysis.diagnostics)
         if analysis.profile.value in {"very_hot", "almost_ready"}:
-            diagnostics.append("Source already hot: prioritize transparent and minimal moves.")
+            diagnostics.append(self._t("diagnostic_already_hot"))
         self.metric_labels["diagnostics"].setText(" | ".join(diagnostics))
 
     def _recommended_target_lufs(self, analysis: SourceAnalysis) -> tuple[float, str]:
         metrics = analysis.metrics
         if analysis.profile in {SourceProfile.VERY_HOT, SourceProfile.ALMOST_READY, SourceProfile.TOUCH_MINIMALLY}:
-            return -10.5, "source is already hot"
+            return -10.5, self._t("reason_already_hot")
         if analysis.profile is SourceProfile.LOW_DYNAMICS:
-            return -11.0, "limited dynamics need headroom"
+            return -11.0, self._t("reason_limited_dynamics")
         if metrics.lra_lu >= 8.0 and metrics.true_peak_dbtp <= -1.0:
-            return -9.0, "healthy dynamics can take a louder pass"
+            return -9.0, self._t("reason_healthy_dynamics")
         if metrics.integrated_lufs <= -14.0:
-            return -10.0, "source has room for gain"
-        return -10.0, "balanced default"
+            return -10.0, self._t("reason_room_for_gain")
+        return -10.0, self._t("reason_balanced_default")
 
     def _populate_session(self, session: OptimizationSession) -> None:
         self.results_table.setRowCount(len(session.candidates))
         for row, candidate in enumerate(session.candidates):
             values = [
-                "Recommended" if row == 0 else self._candidate_choice_label(candidate),
+                self._t("role_recommended") if row == 0 else self._candidate_choice_label(candidate),
                 self._candidate_version_label(candidate),
+                self._candidate_verdict_label(candidate),
                 f"{candidate.score:.1f}",
                 f"{candidate.output_metrics.integrated_lufs:.1f}",
                 f"{candidate.output_metrics.true_peak_dbtp:.1f}",
@@ -2583,6 +3016,11 @@ class MainWindow(QMainWindow):
             for col, value in enumerate(values):
                 item = QTableWidgetItem(value)
                 item.setData(Qt.ItemDataRole.UserRole, candidate)
+                if col == 2:
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    self._style_verdict_item(item, self._candidate_verdict_tone(candidate))
+                if col >= 3:
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self.results_table.setItem(row, col, item)
         self._apply_results_table_layout()
         if session.candidates:
@@ -2590,6 +3028,7 @@ class MainWindow(QMainWindow):
             self._populate_best_candidate(session.best_candidate)
         else:
             self._populate_best_candidate(None)
+        self._sync_ab_version_combo()
 
     def _populate_best_candidate(self, candidate: CandidateResult | None) -> None:
         if candidate is None:
@@ -2615,72 +3054,131 @@ class MainWindow(QMainWindow):
         )
         top_reasons = candidate.reasons[:3]
         if len(candidate.reasons) > 3:
-            top_reasons.append("Further details available in candidate panel.")
+            top_reasons.append(self._t("candidate_more_details"))
         self.best_labels["reasons"].setText(" | ".join(top_reasons))
         self.best_labels["path"].setText(str(candidate.output_path))
+
+    def _populate_selected_b_summary(self, candidate: CandidateResult | None) -> None:
+        if candidate is None:
+            self.selected_b_summary_label.setText(self._t("selected_b_empty"))
+            self.selected_b_metrics_label.setText("--")
+            return
+        metrics = candidate.output_metrics
+        self.selected_b_summary_label.setText(
+            self._t(
+                "selected_b_summary",
+                version=self._candidate_version_label(candidate),
+                verdict=self._candidate_verdict_label(candidate),
+                score=candidate.score,
+            )
+        )
+        self.selected_b_metrics_label.setText(
+            self._t(
+                "selected_b_metrics",
+                lufs=metrics.integrated_lufs,
+                peak=metrics.true_peak_dbtp,
+                lra=metrics.lra_lu,
+            )
+        )
+
+    def _sync_ab_version_combo(self, selected: CandidateResult | None = None) -> None:
+        if not hasattr(self, "ab_version_combo"):
+            return
+        selected = selected or self._selected_candidate()
+        self.ab_version_combo.blockSignals(True)
+        self.ab_version_combo.clear()
+        if not self.current_session or not self.current_session.candidates:
+            self.ab_version_combo.addItem(self._t("selected_b_empty"), None)
+            self.ab_version_combo.blockSignals(False)
+            return
+        selected_index = 0
+        for index, candidate in enumerate(self.current_session.candidates):
+            label = f"{self._candidate_version_label(candidate)} - {self._candidate_verdict_label(candidate)}"
+            self.ab_version_combo.addItem(label, candidate)
+            if selected is candidate:
+                selected_index = index
+        self.ab_version_combo.setCurrentIndex(selected_index)
+        self.ab_version_combo.blockSignals(False)
+
+    def _select_candidate_from_ab_combo(self, *_args: object) -> None:
+        candidate = self.ab_version_combo.currentData()
+        if candidate is None:
+            return
+        for row in range(self.results_table.rowCount()):
+            item = self.results_table.item(row, 0)
+            if item is not None and item.data(Qt.ItemDataRole.UserRole) is candidate:
+                self.results_table.selectRow(row)
+                return
 
     def _update_selected_candidate_details(self) -> None:
         selected = self._selected_candidate()
         if selected is None:
             self.details_panel.clear()
             self._clear_before_after()
+            self._populate_selected_b_summary(None)
+            self._sync_ab_version_combo(None)
             self._update_actions()
             return
         lines = [
-            f"Selected: {self._candidate_version_label(selected)}",
-            f"Role: {self._candidate_choice_label(selected)}",
-            f"Use it when: {self._human_preset_description(selected.preset.name, getattr(selected.preset, 'description', ''))}",
-            f"Output: {selected.output_path}",
-            f"Score: {selected.score:.1f}",
-            (
-                "Output metrics: "
-                f"LUFS {selected.output_metrics.integrated_lufs:.1f}, "
-                f"TP {selected.output_metrics.true_peak_dbtp:.1f}, "
-                f"LRA {selected.output_metrics.lra_lu:.1f}"
+            self._t("details_selected", version=self._candidate_version_label(selected)),
+            self._t("details_role", role=self._candidate_choice_label(selected)),
+            self._t(
+                "details_use",
+                description=self._human_preset_description(selected.preset.name, getattr(selected.preset, "description", "")),
             ),
-            (
-                "Delta vs source: "
-                f"LUFS {selected.output_metrics.integrated_lufs - selected.source_metrics.integrated_lufs:+.1f}, "
-                f"LRA {selected.output_metrics.lra_lu - selected.source_metrics.lra_lu:+.1f}"
+            self._t("details_output", path=selected.output_path),
+            self._t("details_score", score=selected.score),
+            self._t(
+                "details_metrics",
+                lufs=selected.output_metrics.integrated_lufs,
+                peak=selected.output_metrics.true_peak_dbtp,
+                lra=selected.output_metrics.lra_lu,
+            ),
+            self._t(
+                "details_delta",
+                lufs=selected.output_metrics.integrated_lufs - selected.source_metrics.integrated_lufs,
+                lra=selected.output_metrics.lra_lu - selected.source_metrics.lra_lu,
             ),
             "",
-            "Why choose it:",
+            self._t("details_why"),
         ]
         lines.extend(f"- {reason}" for reason in selected.reasons)
         lines.extend(
             [
                 "",
-                "Listening checklist:",
-                "- At matched loudness, is it really better or just louder?",
-                "- Does the kick keep its attack?",
-                "- Does the sub stay controlled after limiting?",
-                "- Do hats or synths become harsh or tiring?",
-                "- Test intro, drop, and break, not only the loudest section.",
+                self._t("details_checklist"),
+                self._t("checklist_loudness"),
+                self._t("checklist_kick"),
+                self._t("checklist_sub"),
+                self._t("checklist_harsh"),
+                self._t("checklist_sections"),
             ]
         )
         self.details_panel.setPlainText("\n".join(lines))
         self._populate_before_after(selected)
         self.status_label.setText(self._t("selected_for_ab_export", version=self._candidate_version_label(selected)))
         self._populate_best_candidate(selected)
+        self._populate_selected_b_summary(selected)
+        self._sync_ab_version_combo(selected)
         self._update_actions()
 
     def _toggle_candidate_details(self) -> None:
         visible = self.details_panel.isHidden()
         self.details_panel.setVisible(visible)
-        self.details_button.setText("Hide scoring details" if visible else "Show scoring details")
+        self.details_button.setText(self._t("hide_scoring") if visible else self._t("show_scoring"))
 
     def _toggle_source_details(self) -> None:
         visible = self.source_details_panel.isHidden()
         self.source_details_panel.setVisible(visible)
         self.source_details_button.setText(
-            "Hide waveform and diagnostics" if visible else "Show waveform and diagnostics"
+            self._t("hide_waveform") if visible else self._t("show_waveform")
         )
 
     def _toggle_source_review(self) -> None:
         visible = self.source_box.isHidden()
         self.source_box.setVisible(visible)
         self.source_review_button.setText(
-            "Hide source analysis" if visible else "Review source analysis"
+            self._t("hide_source") if visible else self._t("review_source")
         )
 
     def _selected_candidate(self) -> CandidateResult | None:
@@ -2694,28 +3192,64 @@ class MainWindow(QMainWindow):
 
     def _candidate_choice_label(self, candidate: CandidateResult) -> str:
         if "_loudest_" in candidate.preset.name:
-            return "Max loudness test"
+            return self._t("role_max_loudness")
         if "_target_" in candidate.preset.name:
-            return "Careful comparison"
+            return self._t("role_careful")
         if candidate.preset.name.endswith("_optimaster"):
-            return "Clean fallback"
+            return self._t("role_fallback")
         if self.current_session and self.current_session.candidates:
             if self.current_session.candidates[0] is candidate:
-                return "Recommended"
-        return "Your target version"
+                return self._t("role_recommended")
+        return self._t("role_target")
+
+    def _candidate_verdict_label(self, candidate: CandidateResult) -> str:
+        rank = self._candidate_rank(candidate)
+        if rank == 1:
+            return self._t("table_verdict_best")
+        if candidate.output_metrics.true_peak_dbtp > -0.5:
+            return self._t("table_verdict_risky")
+        if "_optimaster" in candidate.preset.name:
+            return self._t("table_verdict_safe")
+        if "_target_" in candidate.preset.name:
+            return self._t("table_verdict_dynamic")
+        if self.current_session is not None and self.current_session.best_candidate is not None:
+            best_lufs = self.current_session.best_candidate.output_metrics.integrated_lufs
+            if candidate.output_metrics.integrated_lufs > best_lufs + 0.2:
+                return self._t("table_verdict_loud")
+        return self._t("table_verdict_alternative")
+
+    def _candidate_verdict_tone(self, candidate: CandidateResult) -> str:
+        verdict = self._candidate_verdict_label(candidate)
+        if verdict in {self._t("table_verdict_best"), self._t("table_verdict_dynamic")}:
+            return "good"
+        if verdict == self._t("table_verdict_risky"):
+            return "warn"
+        return "neutral"
+
+    def _style_verdict_item(self, item: QTableWidgetItem, tone: str) -> None:
+        if tone == "good":
+            item.setForeground(QBrush(QColor("#042f2e")))
+            item.setBackground(QBrush(QColor("#5eead4")))
+            return
+        if tone == "warn":
+            item.setForeground(QBrush(QColor("#1b1406")))
+            item.setBackground(QBrush(QColor("#f6c95f")))
+            return
+        item.setForeground(QBrush(QColor("#e4e4e7")))
+        item.setBackground(QBrush(QColor("#18181b")))
 
     def _candidate_version_label(self, candidate: CandidateResult) -> str:
         rank = self._candidate_rank(candidate)
         name = self._human_preset_name(candidate.preset.name)
         if "_loudest_" in candidate.preset.name:
-            name = f"{name} - Max loudness"
+            name = f"{name} - {self._t('suffix_max_loudness')}"
         if "_target_" in candidate.preset.name:
-            name = f"{name} - Careful comparison"
+            name = f"{name} - {self._t('suffix_careful')}"
         if candidate.preset.name.endswith("_optimaster"):
-            name = f"{name} - Clean fallback"
+            name = f"{name} - {self._t('suffix_fallback')}"
         if rank is None:
             return name
-        return f"Version {rank}: {name}"
+        return self._t("version_rank", rank=rank, name=name)
 
     def _base_preset_name(self, preset_name: str) -> str:
         name = preset_name.removesuffix("_optimaster")
@@ -2727,13 +3261,20 @@ class MainWindow(QMainWindow):
 
     def _human_preset_name(self, preset_name: str) -> str:
         base_name = self._base_preset_name(preset_name)
-        return PRESET_DISPLAY_NAMES.get(base_name, base_name.replace("_", " ").title())
+        names = PRESET_DISPLAY_NAMES_FR if self.language == "fr" else PRESET_DISPLAY_NAMES
+        return names.get(base_name, base_name.replace("_", " ").title())
 
     def _human_preset_description(self, preset_name: str, fallback: str) -> str:
-        return PRESET_DISPLAY_DESCRIPTIONS.get(self._base_preset_name(preset_name), fallback)
+        descriptions = PRESET_DISPLAY_DESCRIPTIONS_FR if self.language == "fr" else PRESET_DISPLAY_DESCRIPTIONS
+        return descriptions.get(self._base_preset_name(preset_name), fallback)
 
     def _display_progress_message(self, message: str) -> str:
-        for prefix in ("Rendering ", "Measuring ", "Scoring "):
+        progress_prefixes = {
+            "Rendering ": self._t("progress_rendering"),
+            "Measuring ": self._t("progress_measuring"),
+            "Scoring ": self._t("progress_scoring"),
+        }
+        for prefix, label in progress_prefixes.items():
             if message.startswith(prefix):
                 preset_name = message.removeprefix(prefix)
                 version_label = ""
@@ -2742,7 +3283,7 @@ class MainWindow(QMainWindow):
                     version_token = version_token.strip()
                     if "/" in version_token:
                         version_label = f"V{version_token} - "
-                return f"{version_label}{prefix}{self._human_preset_name(preset_name.strip())}"
+                return f"{version_label}{label} {self._human_preset_name(preset_name.strip())}"
         return message
 
     def _animated_status_text(self, message: str) -> str:
@@ -2757,14 +3298,14 @@ class MainWindow(QMainWindow):
         if animated:
             title = self._animated_status_text(title)
         if percent <= 0:
-            meta = "Starting"
+            meta = self._t("progress_starting")
         elif percent >= 100:
-            meta = "100% complete"
+            meta = self._t("progress_complete")
         else:
-            meta_parts = [f"{percent}% complete"]
+            meta_parts = [self._t("progress_percent", percent=percent)]
             elapsed = self._elapsed_work_time()
             if elapsed:
-                meta_parts.append(f"{elapsed} elapsed")
+                meta_parts.append(self._t("progress_elapsed", elapsed=elapsed))
             meta = " · ".join(meta_parts)
         return version, title, meta
 
@@ -2773,13 +3314,106 @@ class MainWindow(QMainWindow):
         detail = f"{version} · {meta}" if version else meta
         return f"{title}\n{detail}"
 
-    def _rich_progress_text(self, message: str, percent: int, animated: bool = False) -> str:
+    def _progress_task_labels(self, kind: str | None) -> list[str]:
+        if kind == "optimize":
+            return [
+                self._t("task_render_prepare"),
+                self._t("task_render_create"),
+                self._t("task_render_measure"),
+                self._t("task_render_score"),
+                self._t("task_render_export"),
+                self._t("task_render_ready"),
+            ]
+        return [
+            self._t("task_analysis_validate"),
+            self._t("task_analysis_engine"),
+            self._t("task_analysis_measure"),
+            self._t("task_analysis_profile"),
+            self._t("task_analysis_ready"),
+        ]
+
+    def _progress_task_index(self, kind: str | None, message: str, percent: int) -> int:
+        normalized = message.lower()
+        if percent >= 100:
+            return len(self._progress_task_labels(kind)) - 1
+        if kind == "optimize":
+            if percent >= 92 or "export" in normalized or "writing" in normalized or "écrire" in normalized:
+                return 4
+            if percent >= 84:
+                return 3
+            if percent >= 70:
+                return 2
+            if percent >= 45 or "rendu" in normalized or "render" in normalized:
+                return 1
+            return 0
+        if "ffmpeg" in normalized or "moteur" in normalized:
+            return 1
+        if "ready" in normalized or "prêt" in normalized:
+            return 4
+        if "loudness" in normalized or "analyse" in normalized or "analyz" in normalized or "mesur" in normalized:
+            return 2
+        if percent >= 80:
+            return 3
+        if percent >= 35:
+            return 2
+        if percent >= 15:
+            return 1
+        return 0
+
+    def _progress_task_states(self, kind: str | None, message: str, percent: int) -> list[tuple[str, str]]:
+        labels = self._progress_task_labels(kind)
+        active_index = self._progress_task_index(kind, message, percent)
+        if kind == self._active_worker_kind:
+            active_index = max(active_index, self._last_progress_task_index)
+            self._last_progress_task_index = active_index
+        states: list[tuple[str, str]] = []
+        for index, label in enumerate(labels):
+            if index < active_index or percent >= 100:
+                state = "done"
+            elif index == active_index:
+                state = "active"
+            else:
+                state = "pending"
+            states.append((label, state))
+        return states
+
+    def _progress_tasks_html(self, tasks: list[tuple[str, str]]) -> str:
+        if not tasks:
+            return ""
+        rows = []
+        for label, state in tasks:
+            if state == "done":
+                diode = "#2dd4bf"
+                text = "#d4d4d8"
+            elif state == "active":
+                diode = "#e5b94d"
+                text = "#fafafa"
+            else:
+                diode = "#3f3f46"
+                text = "#71717a"
+            rows.append(
+                f'<div style="margin-top:4px;">'
+                f'<span style="color:{diode};font-size:13px;">●</span>'
+                f'<span style="color:{text};font-size:12px;font-weight:650;">&nbsp;{escape(label)}</span>'
+                "</div>"
+            )
+        return "".join(rows)
+
+    def _rich_progress_text(
+        self,
+        message: str,
+        percent: int,
+        animated: bool = False,
+        tasks: list[tuple[str, str]] | None = None,
+    ) -> str:
         version, title, meta = self._progress_parts(message, percent, animated=animated)
         detail = f"{version} · {meta}" if version else meta
+        task_html = self._progress_tasks_html(tasks or [])
         return (
             '<div style="line-height:1.25;">'
             f'<span style="color:#f7f3ea;font-size:14px;font-weight:800;">{escape(title)}</span><br>'
             f'<span style="color:#a1a1aa;font-size:12px;font-weight:600;">{escape(detail)}</span>'
+            f"{task_html}"
             "</div>"
         )
 
@@ -2813,10 +3447,10 @@ class MainWindow(QMainWindow):
         return None
 
     def _clear_before_after(self) -> None:
-        self.comparison_rows["loudness"].set_values("--", "--", "--", "Select a version to compare loudness.", None)
-        self.comparison_rows["peak"].set_values("--", "--", "--", "Peak safety appears here.", None)
-        self.comparison_rows["lra"].set_values("--", "--", "--", "Dynamics change appears here.", None)
-        self.comparison_rows["score"].set_values("--", "--", "--", "Technical score appears here.", None)
+        self.comparison_rows["loudness"].set_values("--", "--", "--", self._t("comparison_loudness_empty"), None)
+        self.comparison_rows["peak"].set_values("--", "--", "--", self._t("comparison_peak_empty"), None)
+        self.comparison_rows["lra"].set_values("--", "--", "--", self._t("comparison_lra_empty"), None)
+        self.comparison_rows["score"].set_values("--", "--", "--", self._t("comparison_score_empty"), None)
 
     def _populate_before_after(self, candidate: CandidateResult) -> None:
         source = candidate.source_metrics
@@ -2829,28 +3463,40 @@ class MainWindow(QMainWindow):
             format_metric(source.integrated_lufs, "LUFS"),
             format_metric(output.integrated_lufs, "LUFS"),
             f"{loudness_delta:+.1f} LUFS",
-            "Louder" if loudness_delta > 0 else "Quieter" if loudness_delta < 0 else "Same loudness",
+            self._t("comparison_louder")
+            if loudness_delta > 0
+            else self._t("comparison_quieter")
+            if loudness_delta < 0
+            else self._t("comparison_same_loudness"),
             abs(loudness_delta) <= 3.0,
         )
         self.comparison_rows["peak"].set_values(
             format_metric(source.true_peak_dbtp, "dBTP"),
             format_metric(output.true_peak_dbtp, "dBTP"),
             f"{peak_delta:+.1f} dB",
-            "More headroom" if peak_delta < 0 else "Hotter peak" if peak_delta > 0 else "Same peak",
+            self._t("comparison_more_headroom")
+            if peak_delta < 0
+            else self._t("comparison_hotter_peak")
+            if peak_delta > 0
+            else self._t("comparison_same_peak"),
             output.true_peak_dbtp <= -1.0,
         )
         self.comparison_rows["lra"].set_values(
             format_metric(source.lra_lu, "LU"),
             format_metric(output.lra_lu, "LU"),
             f"{lra_delta:+.1f} LU",
-            "More dynamic" if lra_delta > 0 else "Tighter" if lra_delta < 0 else "Dynamics preserved",
+            self._t("comparison_more_dynamic")
+            if lra_delta > 0
+            else self._t("comparison_tighter")
+            if lra_delta < 0
+            else self._t("comparison_dynamics_preserved"),
             lra_delta >= -2.0,
         )
         self.comparison_rows["score"].set_values(
             "--",
             f"{candidate.score:.1f}",
-            "Best compromise" if self._candidate_rank(candidate) == 1 else "Alternative",
-            "Technical compromise between loudness, safety, and dynamics.",
+            self._t("comparison_best") if self._candidate_rank(candidate) == 1 else self._t("comparison_alternative"),
+            self._t("comparison_score_verdict"),
             candidate.score >= 70,
         )
 
@@ -2860,13 +3506,13 @@ class MainWindow(QMainWindow):
     def _export_selected_candidate(self) -> None:
         candidate = self._selected_candidate()
         if candidate is None:
-            self._show_error("Select a rendered candidate before exporting.")
+            self._show_error(self._t("select_rendered_candidate"))
             return
         if not self._candidate_in_current_session(candidate):
-            self._show_error("This candidate is no longer part of the current session. Create mastering passes again.")
+            self._show_error(self._t("stale_candidate"))
             return
         if not candidate.output_path.exists():
-            self._show_error(f"Cannot export missing rendered file:\n{candidate.output_path}")
+            self._show_error(self._t("missing_rendered_file", path=candidate.output_path))
             return
 
         destination, _ = QFileDialog.getSaveFileName(
@@ -2881,22 +3527,27 @@ class MainWindow(QMainWindow):
         try:
             shutil.copy2(candidate.output_path, destination)
         except OSError as exc:
-            self._show_error(f"Export failed:\n{exc}")
+            self._show_error(self._t("export_failed", error=exc))
             return
 
         QMessageBox.information(
             self,
-            "Export complete",
-            f"Copied {self._candidate_version_label(candidate)} to:\n{destination}",
+            self._t("export_complete_title"),
+            self._t("export_complete_body", version=self._candidate_version_label(candidate), destination=destination),
         )
-        self.playback_label.setText("Export complete. Start a new analysis when you are ready.")
+        self.playback_label.setText(self._t("export_complete_next"))
+        self.best_row_labels["new_analysis"].setVisible(True)
         self.new_analysis_button.setVisible(True)
         self.new_analysis_button.setEnabled(True)
         self._schedule_window_fit()
 
     def _candidate_in_current_session(self, candidate: CandidateResult) -> bool:
+        input_path = self.input_edit.text().strip()
+        if not input_path:
+            return False
         return bool(
             self.current_session
+            and self.current_session.analysis.source_path == Path(input_path).resolve()
             and any(session_candidate is candidate for session_candidate in self.current_session.candidates)
         )
 
@@ -2915,13 +3566,13 @@ class MainWindow(QMainWindow):
     def _save_listening_note(self) -> None:
         candidate = self._selected_candidate()
         if candidate is None:
-            self._show_error("Select a candidate to save a listening note.")
+            self._show_error(self._t("select_note_candidate"))
             return
         config = load_config(self.config_edit.text().strip() or None)
         preferences_path = (self.current_output_dir or Path.cwd() / "renders") / "preferences.json"
         service = EngineService(config=config, preference_path=preferences_path)
         service.add_listening_note(candidate.preset.name, self.rating_spin.value())
-        self.status_label.setText(f"Saved note for {self._candidate_version_label(candidate)} in {preferences_path}")
+        self.status_label.setText(self._t("note_saved", version=self._candidate_version_label(candidate), path=preferences_path))
 
     def _start_new_analysis(self) -> None:
         self._stop_playback()
@@ -2939,34 +3590,36 @@ class MainWindow(QMainWindow):
         self.render_work_pulse.stop()
         self.render_progress_bar.setValue(0)
         self.render_progress_bar.setVisible(False)
-        self.render_status_label.setText("Ready to render offline mastering passes.")
+        self.render_status_label.setText(self._t("ready_render"))
         self.render_overlay.stop()
-        self.status_label.setText("Choose a source file to begin.")
+        self.status_label.setText(self._t("step_choose_source"))
         self.source_box.setVisible(False)
         self.source_details_panel.setVisible(False)
-        self.source_details_button.setText("Show waveform and diagnostics")
-        self.source_review_button.setText("Review source analysis")
-        self.metric_labels["profile"].setText("Not analyzed")
+        self.source_details_button.setText(self._t("show_waveform"))
+        self.source_review_button.setText(self._t("review_source"))
+        self.metric_labels["profile"].setText(self._t("not_analyzed"))
         self.metric_labels["integrated"].setText("--")
         self.metric_labels["true_peak"].setText("--")
         self.metric_labels["lra"].setText("--")
-        self.metric_labels["diagnostics"].setText("Analyze a source to see diagnostics.")
+        self.metric_labels["diagnostics"].setText(self._t("diagnostics_pending"))
         self.waveform_label.setPixmap(QPixmap())
-        self.waveform_label.setText("Waveform preview appears after file selection.")
+        self.waveform_label.setText(self._t("waveform_pending"))
         self.results_table.setRowCount(0)
         self.details_panel.clear()
         self.details_panel.setVisible(False)
-        self.details_button.setText("Show scoring details")
+        self.details_button.setText(self._t("show_scoring"))
         self._clear_before_after()
         self._populate_best_candidate(None)
+        self._populate_selected_b_summary(None)
+        self.best_row_labels["new_analysis"].setVisible(False)
         self.new_analysis_button.setVisible(False)
         self.workflow_tabs.setCurrentIndex(0)
         self._update_actions()
 
     def _update_waveform_preview(self, source_path: Path) -> None:
         self.waveform_label.setPixmap(QPixmap())
-        self.waveform_label.setText("Loading waveform preview...")
-        self.status_label.setText("Loading source preview...")
+        self.waveform_label.setText(self._t("waveform_loading"))
+        self.status_label.setText(self._t("source_preview_loading"))
         self.progress_bar.setRange(0, 0)
         self.progress_bar.setVisible(True)
 
@@ -3016,7 +3669,7 @@ class MainWindow(QMainWindow):
 
         self.waveform_preview_path = None
         self.waveform_label.setPixmap(QPixmap())
-        self.waveform_label.setText("Waveform preview unavailable for this file.")
+        self.waveform_label.setText(self._t("waveform_unavailable"))
         self._finish_waveform_loading(source_path)
 
     def _finish_waveform_loading(self, source_path: str) -> None:
@@ -3027,11 +3680,11 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(False)
         current_path = Path(source_path)
         if self.current_analysis is not None and self.current_analysis.source_path == current_path:
-            self.status_label.setText("Step 2 complete. Step 3: create mastering passes.")
+            self.status_label.setText(self._t("step3_create_versions"))
             self.progress_bar.setValue(100)
             return
 
-        self.status_label.setText("Step 1 complete. Step 2: analyze the source.")
+        self.status_label.setText(self._t("step_analyze_next"))
         self.progress_bar.setValue(0)
 
     def _cleanup_waveform_worker(self) -> None:
@@ -3052,8 +3705,11 @@ class MainWindow(QMainWindow):
         self.results_table.setRowCount(0)
         self.details_panel.clear()
         self._clear_before_after()
+        self.ab_validated_candidate = None
         self._populate_best_candidate(None)
-        self.render_status_label.setText("Ready to render offline mastering passes.")
+        self._populate_selected_b_summary(None)
+        self._sync_ab_version_combo(None)
+        self.render_status_label.setText(self._t("ready_render"))
         self.render_progress_bar.setValue(0)
         self.render_progress_bar.setVisible(False)
         self._update_actions()
@@ -3085,7 +3741,7 @@ class MainWindow(QMainWindow):
     def _play_source(self) -> None:
         input_path = self.input_edit.text().strip()
         if not input_path:
-            self._show_error("Choose a source file before playback.")
+            self._show_error(self._t("choose_source_playback"))
             return
         self._start_playback(Path(input_path), "A (source)")
 
@@ -3093,25 +3749,34 @@ class MainWindow(QMainWindow):
         candidate = self._selected_candidate()
         if candidate is None:
             self.workflow_tabs.setCurrentIndex(1)
-            self.status_label.setText("Step 4 needed: select a candidate before listening to B.")
+            self.status_label.setText(self._t("select_candidate_for_b"))
             return
         self._start_playback(candidate.output_path, f"B ({self._candidate_version_label(candidate)})")
 
     def _start_playback(self, path: Path, label: str) -> None:
         if not path.exists():
-            self._show_error(f"Cannot play missing file: {path}")
+            self._show_error(self._t("missing_playback_file", path=path))
+            return
+        if self.current_playback == str(path):
+            self._stop_playback()
             return
         self.audio_player.setSource(QUrl.fromLocalFile(str(path)))
         self.audio_player.play()
         self.current_playback = str(path)
-        self.playback_waveform.set_track(path, f"Now playing {label}: {path.name}")
-        self.playback_label.setText(f"Now playing {label}: {path.name}")
+        if label.startswith("B"):
+            candidate = self._selected_candidate()
+            if candidate is not None:
+                self.ab_validated_candidate = candidate
+        self.playback_waveform.set_track(path, self._t("now_playing", label=label, name=path.name))
+        self.playback_label.setText(self._t("now_playing", label=label, name=path.name))
+        self._update_actions()
 
     def _stop_playback(self) -> None:
         self.audio_player.stop()
         self.current_playback = None
         self.playback_waveform.stop()
-        self.playback_label.setText("Playback stopped.")
+        self.playback_label.setText(self._t("playback_stopped"))
+        self._update_actions()
 
     def _set_busy(self, busy: bool) -> None:
         self.workflow_tabs.tabBar().setDisabled(busy)
@@ -3124,7 +3789,10 @@ class MainWindow(QMainWindow):
             self.new_analysis_button,
             self.play_source_button,
             self.play_candidate_button,
+            self.stop_audio_button,
+            self.ab_version_combo,
             self.listen_selected_button,
+            self.results_compare_button,
             self.save_note_button,
             self.listen_check_button,
             self.change_source_button,
@@ -3141,8 +3809,14 @@ class MainWindow(QMainWindow):
             and input_path is not None
             and self.current_analysis.source_path == input_path
         )
-        has_candidates = bool(self.current_session and self.current_session.candidates)
-        has_candidate = self._selected_candidate() is not None
+        has_candidates = (
+            has_analysis
+            and bool(self.current_session and self.current_session.candidates)
+            and self.current_session is not None
+            and self.current_session.analysis.source_path == input_path
+        )
+        selected_candidate = self._selected_candidate() if has_candidates else None
+        has_candidate = selected_candidate is not None
         if has_input and input_path is not None:
             self.selected_source_label.setText(self._t("selected_source_next", name=input_path.name))
         if has_analysis:
@@ -3151,9 +3825,13 @@ class MainWindow(QMainWindow):
         self.analyze_button.setText(self._t("analyzed") if has_analysis else self._t("analyze_source"))
         self.optimize_button.setEnabled(has_analysis and self._thread is None)
         self.export_button.setEnabled(self._thread is None and has_candidate)
+        self.export_button.setToolTip("" if has_candidate else self._t("select_rendered_candidate"))
+        self.ab_version_combo.setEnabled(self._thread is None and has_candidate)
         self.new_analysis_button.setEnabled(self._thread is None)
         self.play_candidate_button.setEnabled(self._thread is None and has_candidate)
+        self.stop_audio_button.setEnabled(self._thread is None and self.current_playback is not None)
         self.listen_selected_button.setEnabled(self._thread is None and has_candidate)
+        self.results_compare_button.setEnabled(self._thread is None and has_candidate)
         self.save_note_button.setEnabled(self._thread is None and has_candidate)
         can_choose_target = self._thread is None and not self.max_loudness_checkbox.isChecked()
         self.quick_target_combo.setEnabled(can_choose_target)
@@ -3167,9 +3845,21 @@ class MainWindow(QMainWindow):
         self.workflow_tabs.setTabEnabled(0, True)
         self.workflow_tabs.setTabEnabled(1, has_candidates)
         self.workflow_tabs.setTabEnabled(2, has_candidate)
+        self._sync_results_guidance()
         self._sync_control_visibility(has_input, has_analysis)
         self._sync_button_cursors()
         self._schedule_window_fit()
+
+    def _sync_results_guidance(self, has_candidates: bool | None = None, has_candidate: bool | None = None) -> None:
+        if has_candidates is None:
+            has_candidates = bool(self.current_session and self.current_session.candidates)
+        if has_candidate is None:
+            has_candidate = has_candidates and self._selected_candidate() is not None
+        self.results_box.setTitle(self._t("best_box") if has_candidates else self._t("choose_version"))
+        self.results_hint_label.setText(
+            self._t("choose_version_hint") if has_candidates else self._t("choose_version_empty_hint")
+        )
+        self.results_compare_button.setVisible(has_candidate)
 
     def _sync_control_visibility(self, has_input: bool, has_analysis: bool) -> None:
         self.session_box.setVisible(not has_input)
@@ -3200,11 +3890,22 @@ class MainWindow(QMainWindow):
     def _schedule_window_fit(self) -> None:
         QTimer.singleShot(0, self._fit_window_to_content)
 
+    def _initial_window_size(self) -> QSize:
+        width = DEFAULT_WINDOW_WIDTH
+        height = DEFAULT_WINDOW_HEIGHT
+        screen = QApplication.primaryScreen()
+        if screen is not None:
+            screen_size = screen.size()
+            width = min(width, max(self.minimumWidth(), screen_size.width()))
+            height = min(height, max(self.minimumHeight(), screen_size.height()))
+        return QSize(width, height)
+
     def _fit_window_to_content(self) -> None:
         if self.isMaximized() or self.isFullScreen():
             return
 
         target_height = self._target_window_height()
+        target_height = max(target_height, min(DEFAULT_WINDOW_HEIGHT, self._initial_window_size().height()))
         if abs(self.height() - target_height) > 28:
             self.resize(self.width(), target_height)
 
@@ -3239,11 +3940,23 @@ class MainWindow(QMainWindow):
 
     def resizeEvent(self, event: object) -> None:
         super().resizeEvent(event)
+        self._sync_desktop_content_width()
         self._position_render_overlay()
+
+    def _sync_desktop_content_width(self) -> None:
+        if not hasattr(self, "brand_header") or not hasattr(self, "workflow_tabs"):
+            return
+        central = self.centralWidget()
+        viewport_width = central.width() if central is not None and central.width() > 0 else self.width()
+        target_width = min(CONTENT_MAX_WIDTH, max(CONTENT_MIN_WIDTH, viewport_width - 48))
+        self.brand_header.setFixedWidth(target_width)
+        self.workflow_tabs.setFixedWidth(target_width)
 
     def _position_render_overlay(self) -> None:
         if hasattr(self, "render_overlay"):
-            self.render_overlay.setGeometry(self.render_box.rect())
+            parent = self.render_overlay.parentWidget()
+            if parent is not None:
+                self.render_overlay.setGeometry(parent.rect())
             self.render_overlay.raise_()
 
     def _render_story_text(self) -> str:
