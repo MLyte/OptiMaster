@@ -109,9 +109,12 @@ UI_TEXT = {
         "render_box": "Create mastering passes",
         "render_context_ready": "Source ready. Choose a LUFS target, then render offline passes.",
         "masterings_box": "Masterings dashboard",
-        "masterings_hint": "Render jobs appear here while they run. Finished sessions stay available for review.",
-        "masterings_empty": "No mastering job yet",
+        "masterings_hint": "Track active local and AI Mastering jobs here. Finished versions are reviewed in the A/B and history areas.",
+        "masterings_empty": "No active mastering job right now.",
         "check_cloud_jobs": "Check AI Mastering jobs",
+        "dashboard_status": "Status",
+        "dashboard_progress": "Progress",
+        "dashboard_result": "Selected output",
         "dashboard_running": "Running",
         "dashboard_completed": "Completed",
         "dashboard_failed": "Failed",
@@ -158,7 +161,7 @@ UI_TEXT = {
         "show_advanced": "Show advanced options",
         "hide_advanced": "Hide advanced options",
         "create_versions": "Create mastering passes",
-        "export_final": "Export selected version",
+        "export_final": "Export B",
         "ready_render": "Ready to render offline mastering passes.",
         "cancel": "Cancel",
         "master_goal": "Master goal",
@@ -222,7 +225,7 @@ UI_TEXT = {
         "export_complete_title": "Export complete",
         "export_complete_body": "Copied {version} to:\n{destination}",
         "export_complete_next": "Export complete. Start a new analysis when you are ready.",
-        "select_rendered_candidate": "Select a rendered candidate before exporting.",
+        "select_rendered_candidate": "Select version B before exporting.",
         "stale_candidate": "This candidate is no longer part of the current session. Create mastering passes again.",
         "missing_rendered_file": "Cannot export missing rendered file:\n{path}",
         "export_failed": "Export failed:\n{error}",
@@ -365,9 +368,12 @@ UI_TEXT = {
         "render_box": "Créer les passes de mastering",
         "render_context_ready": "Source prête. Choisis une cible LUFS, puis crée les passes hors ligne.",
         "masterings_box": "Dashboard des masterings",
-        "masterings_hint": "Les rendus apparaissent ici pendant leur traitement. Les sessions terminées restent disponibles pour suivi.",
-        "masterings_empty": "Aucun mastering pour l’instant",
+        "masterings_hint": "Suis ici les rendus locaux et AI Mastering en cours. Les versions terminées se consultent dans l’A/B et l’historique.",
+        "masterings_empty": "Aucun mastering en cours pour l’instant.",
         "check_cloud_jobs": "Vérifier les jobs AI Mastering",
+        "dashboard_status": "Statut",
+        "dashboard_progress": "Progression",
+        "dashboard_result": "Sortie retenue",
         "dashboard_running": "En cours",
         "dashboard_completed": "Terminé",
         "dashboard_failed": "Échec",
@@ -414,7 +420,7 @@ UI_TEXT = {
         "show_advanced": "Afficher options avancées",
         "hide_advanced": "Masquer options avancées",
         "create_versions": "Créer les passes de mastering",
-        "export_final": "Exporter la version sélectionnée",
+        "export_final": "Exporter B",
         "ready_render": "Prêt à créer les passes de mastering hors ligne.",
         "cancel": "Annuler",
         "master_goal": "Objectif",
@@ -478,7 +484,7 @@ UI_TEXT = {
         "export_complete_title": "Export terminé",
         "export_complete_body": "{version} copiée vers :\n{destination}",
         "export_complete_next": "Export terminé. Lance une nouvelle analyse quand tu es prêt.",
-        "select_rendered_candidate": "Choisis une version rendue avant d’exporter.",
+        "select_rendered_candidate": "Choisis une version B avant d’exporter.",
         "stale_candidate": "Cette version ne fait plus partie de la session actuelle. Recrée les passes de mastering.",
         "missing_rendered_file": "Impossible d’exporter ce fichier rendu introuvable :\n{path}",
         "export_failed": "L’export a échoué :\n{error}",
@@ -2023,14 +2029,25 @@ class MainWindow(QMainWindow):
         self.masterings_hint_label.setObjectName("statusHint")
         self.masterings_hint_label.setWordWrap(True)
         self.masterings_table = QTableWidget(0, 5)
-        self.masterings_table.setHorizontalHeaderLabels(["Status", "Source", "Objective", "Progress", "Result"])
-        self.masterings_table.setAlternatingRowColors(True)
+        self.masterings_table.setHorizontalHeaderLabels(
+            [
+                self._t("dashboard_status"),
+                self._t("tab_source"),
+                self._t("master_goal"),
+                self._t("dashboard_progress"),
+                self._t("dashboard_result"),
+            ]
+        )
+        self.masterings_table.setObjectName("masteringsTable")
+        self.masterings_table.setAlternatingRowColors(False)
         self.masterings_table.setShowGrid(False)
         self.masterings_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.masterings_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.masterings_table.setSelectionMode(QAbstractItemView.NoSelection)
         self.masterings_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.masterings_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.masterings_table.setWordWrap(False)
         self.masterings_table.verticalHeader().setVisible(False)
-        self.masterings_table.verticalHeader().setDefaultSectionSize(42)
+        self.masterings_table.verticalHeader().setDefaultSectionSize(56)
         self.masterings_table.setMinimumHeight(300)
         self.masterings_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.check_cloud_jobs_button = QPushButton("Check AI Mastering jobs")
@@ -2060,10 +2077,12 @@ class MainWindow(QMainWindow):
 
     def _apply_masterings_table_layout(self) -> None:
         header = self.masterings_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(0, 130)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(3, 160)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
 
     def _build_menu(self) -> None:
@@ -2279,7 +2298,15 @@ class MainWindow(QMainWindow):
         self.masterings_box.setTitle(self._t("masterings_box"))
         self.masterings_hint_label.setText(self._t("masterings_hint"))
         self.check_cloud_jobs_button.setText(self._t("check_cloud_jobs"))
-        self.masterings_table.setHorizontalHeaderLabels(["Status", self._t("tab_source"), self._t("master_goal"), "Progress", self._t("best_box")])
+        self.masterings_table.setHorizontalHeaderLabels(
+            [
+                self._t("dashboard_status"),
+                self._t("tab_source"),
+                self._t("master_goal"),
+                self._t("dashboard_progress"),
+                self._t("dashboard_result"),
+            ]
+        )
 
         self._sync_results_guidance()
         self.results_compare_button.setText(self._t("compare_ab"))
@@ -2754,6 +2781,69 @@ class MainWindow(QMainWindow):
             }
             QTableWidget::item {
                 padding: 6px 8px;
+            }
+            #masteringsTable {
+                background: #101114;
+                border: 1px solid #27272a;
+                border-radius: 12px;
+                padding: 0;
+                alternate-background-color: #101114;
+                selection-background-color: transparent;
+                selection-color: #f7f3ea;
+            }
+            #masteringsTable QHeaderView::section {
+                background: #18181b;
+                color: #d4d4d8;
+                border: 0;
+                border-bottom: 1px solid #27272a;
+                padding: 13px 14px;
+                font-size: 12px;
+                font-weight: 800;
+            }
+            #masteringsTable::item {
+                border-bottom: 1px solid #24242b;
+                padding: 12px 14px;
+            }
+            #masteringsTable::item:selected {
+                background: transparent;
+                color: #f7f3ea;
+            }
+            #dashboardBadgeRunning, #dashboardBadgeDone, #dashboardBadgeError, #dashboardBadgeNeutral {
+                border-radius: 999px;
+                padding: 5px 10px;
+                font-size: 12px;
+                font-weight: 800;
+            }
+            #dashboardBadgeRunning {
+                background: #123735;
+                color: #5eead4;
+            }
+            #dashboardBadgeDone {
+                background: #12301f;
+                color: #bbf7d0;
+            }
+            #dashboardBadgeError {
+                background: #3a1616;
+                color: #fecaca;
+            }
+            #dashboardBadgeNeutral {
+                background: #27272a;
+                color: #e4e4e7;
+            }
+            #dashboardProgress {
+                min-height: 28px;
+                max-height: 28px;
+                border: 1px solid #2f3138;
+                border-radius: 999px;
+                background: #18181b;
+                color: #f7f3ea;
+                font-size: 11px;
+                font-weight: 800;
+                text-align: center;
+            }
+            #dashboardProgress::chunk {
+                border-radius: 999px;
+                background: #14b8a6;
             }
             QProgressBar {
                 border: 1px solid #27272a;
@@ -3926,20 +4016,6 @@ class MainWindow(QMainWindow):
                     str(self._active_mastering_job.get("result", "")),
                 ]
             )
-        for entry in self.history_store.read_all():
-            rows.append(
-                [
-                    self._t("dashboard_completed"),
-                    Path(entry.source_path).name,
-                    entry.mode.title(),
-                    "100%",
-                    (
-                        f"{entry.best_preset} ({entry.best_score:.1f})"
-                        if entry.best_preset is not None and entry.best_score is not None
-                        else "n/a"
-                    ),
-                ]
-            )
         for job in AiMasteringJobStore().read_all():
             if job.status in {"succeeded", "downloaded"}:
                 continue
@@ -3953,12 +4029,68 @@ class MainWindow(QMainWindow):
                 ]
             )
         if not rows:
-            rows.append([self._t("masterings_empty"), "", "", "", ""])
+            self.masterings_table.setRowCount(0)
+            self.masterings_table.clearSpans()
+            self.masterings_table.setRowCount(1)
+            self.masterings_table.setSpan(0, 0, 1, self.masterings_table.columnCount())
+            item = self._dashboard_text_item(self._t("masterings_empty"), muted=True)
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.masterings_table.setItem(0, 0, item)
+            self.masterings_table.setRowHeight(0, 72)
+            self._apply_masterings_table_layout()
+            return
+        self.masterings_table.clearSpans()
+        self.masterings_table.setRowCount(0)
         self.masterings_table.setRowCount(len(rows))
         for row, values in enumerate(rows):
-            for col, value in enumerate(values):
-                self.masterings_table.setItem(row, col, QTableWidgetItem(value))
+            self.masterings_table.setCellWidget(row, 0, self._dashboard_status_widget(values[0]))
+            self.masterings_table.setItem(row, 1, self._dashboard_text_item(values[1]))
+            self.masterings_table.setItem(row, 2, self._dashboard_text_item(values[2], muted=True))
+            self.masterings_table.setCellWidget(row, 3, self._dashboard_progress_widget(values[3]))
+            self.masterings_table.setItem(row, 4, self._dashboard_text_item(values[4], muted=True))
+            self.masterings_table.setRowHeight(row, 58)
         self._apply_masterings_table_layout()
+
+    def _dashboard_text_item(self, value: str, muted: bool = False) -> QTableWidgetItem:
+        item = QTableWidgetItem(value)
+        item.setForeground(QBrush(QColor("#a1a1aa" if muted else "#f7f3ea")))
+        item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        item.setToolTip(value)
+        return item
+
+    def _dashboard_status_widget(self, value: str) -> QWidget:
+        cell = QWidget()
+        layout = QHBoxLayout(cell)
+        layout.setContentsMargins(10, 0, 10, 0)
+        layout.setSpacing(0)
+        badge = QLabel(value)
+        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        badge.setMinimumWidth(86)
+        badge.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        lower_value = value.lower()
+        if "cours" in lower_value or "running" in lower_value or "waiting" in lower_value:
+            badge.setObjectName("dashboardBadgeRunning")
+        elif "termin" in lower_value or "completed" in lower_value or "downloaded" in lower_value:
+            badge.setObjectName("dashboardBadgeDone")
+        elif "fail" in lower_value or "chec" in lower_value or "canceled" in lower_value or "annul" in lower_value:
+            badge.setObjectName("dashboardBadgeError")
+        else:
+            badge.setObjectName("dashboardBadgeNeutral")
+        layout.addWidget(badge)
+        layout.addStretch(1)
+        return cell
+
+    def _dashboard_progress_widget(self, value: str) -> QProgressBar:
+        progress = QProgressBar()
+        progress.setObjectName("dashboardProgress")
+        progress.setRange(0, 100)
+        try:
+            percent = int(str(value).replace("%", "").strip())
+        except ValueError:
+            percent = 0
+        progress.setValue(max(0, min(percent, 100)))
+        progress.setFormat(f"{progress.value()}%" if value else "")
+        return progress
 
     def _check_aimastering_jobs(self) -> None:
         store = AiMasteringJobStore()
