@@ -50,3 +50,8 @@ class OperationCancelledError(AppError):
             message="Operation cancelled by user",
             details=details,
         )
+
+
+class RemoteMasteringError(AppError):
+    def __init__(self, message: str, details: str | None = None):
+        super().__init__(code="remote_mastering_error", message=message, details=details)

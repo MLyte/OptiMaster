@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 from pathlib import Path
 
@@ -28,6 +29,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     analyze = sub.add_parser("analyze", help="Analyze a source file")
     analyze.add_argument("input_file")
+
+    validate = sub.add_parser("validate", help="Validate a mastered WAV against LUFS/TP targets")
+    validate.add_argument("input_file")
+    validate.add_argument("--target-lufs", type=float, required=True)
+    validate.add_argument("--target-tp", type=float, default=-1.0)
+    validate.add_argument("--lufs-tolerance", type=float, default=0.5)
+    validate.add_argument("--tp-tolerance", type=float, default=0.2)
+    validate.add_argument("--json-out", default=None, help="Optional JSON report output path")
+    validate.add_argument("--csv-out", default=None, help="Optional CSV report output path")
 
     sub.add_parser("presets", help="List built-in presets")
 
@@ -64,6 +74,37 @@ def cmd_analyze(input_file: str, config_path: str | None) -> int:
     service = EngineService(config=cfg)
     analysis = service.analyze_source(input_file)
     print(json.dumps(analysis.to_dict(), indent=2))
+    return 0
+
+
+def cmd_validate(
+    input_file: str,
+    target_lufs: float,
+    target_tp: float,
+    lufs_tolerance: float,
+    tp_tolerance: float,
+    json_out: str | None,
+    csv_out: str | None,
+    config_path: str | None,
+) -> int:
+    cfg = load_config(config_path)
+    service = EngineService(config=cfg)
+    report = service.validate_mastering(
+        input_file=input_file,
+        target_lufs=target_lufs,
+        target_tp=target_tp,
+        lufs_tolerance=lufs_tolerance,
+        tp_tolerance=tp_tolerance,
+    )
+    payload = report.to_dict()
+    print(json.dumps(payload, indent=2))
+    if json_out:
+        Path(json_out).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    if csv_out:
+        with Path(csv_out).open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(payload.keys()))
+            writer.writeheader()
+            writer.writerow(payload)
     return 0
 
 
@@ -125,6 +166,17 @@ def main() -> int:
             return cmd_analyze(args.input_file, args.config)
         if args.command == "presets":
             return cmd_presets()
+        if args.command == "validate":
+            return cmd_validate(
+                args.input_file,
+                args.target_lufs,
+                args.target_tp,
+                args.lufs_tolerance,
+                args.tp_tolerance,
+                args.json_out,
+                args.csv_out,
+                args.config,
+            )
         if args.command == "optimize":
             return cmd_optimize(args.input_file, args.output_dir, args.mode, args.config)
         if args.command == "optimize-batch":

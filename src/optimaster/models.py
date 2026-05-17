@@ -108,3 +108,17 @@ class OptimizationSession:
             "candidates": [candidate.to_dict() for candidate in self.candidates],
             "best_candidate": self.best_candidate.preset.name if self.best_candidate else None,
         }
+
+
+@dataclass(slots=True)
+class MasteringValidation:
+    target_lufs: float
+    measured_lufs: float
+    target_tp: float
+    measured_tp: float
+    lufs_tolerance: float
+    tp_tolerance: float
+    status: str
+
+    def to_dict(self) -> dict[str, float | str]:
+        return asdict(self)

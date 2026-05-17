@@ -4,7 +4,7 @@ import shutil
 import sys
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from html import escape
 from importlib import resources
 from pathlib import Path
@@ -18,6 +18,8 @@ from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QCheckBox,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFormLayout,
     QFrame,
@@ -44,13 +46,16 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from optimaster.aimastering_client import AiMasteringClient
+from optimaster.cloud_jobs import AiMasteringJob, AiMasteringJobStore
 from optimaster.config import load_config
 from optimaster.errors import AppError
-from optimaster.ffmpeg import render_waveform_preview
+from optimaster.ffmpeg import analyze_loudness, render_waveform_preview
 from optimaster.history import SessionHistoryStore
 from optimaster import __version__
-from optimaster.models import CandidateResult, OptimizationMode, OptimizationSession, SourceAnalysis, SourceProfile
-from optimaster.service import EngineService
+from optimaster.models import CandidatePreset, CandidateResult, OptimizationMode, OptimizationSession, SourceAnalysis, SourceProfile
+from optimaster.scoring import score_candidate
+from optimaster.service import EngineService, MASTERING_BACKEND_AIMASTERING, MASTERING_BACKEND_LOCAL
 
 
 APP_TITLE = "OptiMaster"
@@ -74,6 +79,7 @@ UI_TEXT = {
         "menu_file": "File",
         "menu_settings": "Settings",
         "menu_language": "Language",
+        "menu_aimastering_token": "AI Mastering token",
         "menu_connect": "Connect",
         "menu_choose_audio": "Choose audio file",
         "menu_choose_output": "Choose output folder",
@@ -82,6 +88,7 @@ UI_TEXT = {
         "tab_source": "1. Source",
         "tab_versions": "2. Versions",
         "tab_listen": "3. A/B",
+        "tab_masterings": "4. Masterings",
         "session": "Session",
         "hero_title": "Offline WAV/FLAC mastering assistant",
         "hero_subtitle": "Analyze locally, create measured clean-LUFS passes, compare A/B, then export. Beta {version}.",
@@ -101,6 +108,22 @@ UI_TEXT = {
         "step_choose_source": "Step 1: choose a source file to begin.",
         "render_box": "Create mastering passes",
         "render_context_ready": "Source ready. Choose a LUFS target, then render offline passes.",
+        "masterings_box": "Masterings dashboard",
+        "masterings_hint": "Render jobs appear here while they run. Finished sessions stay available for review.",
+        "masterings_empty": "No mastering job yet",
+        "check_cloud_jobs": "Check AI Mastering jobs",
+        "dashboard_running": "Running",
+        "dashboard_completed": "Completed",
+        "dashboard_failed": "Failed",
+        "dashboard_cancelled": "Cancelled",
+        "mastering_engine": "External comparison",
+        "engine_local": "Local passes only",
+        "engine_cloud": "Add an AI Mastering version",
+        "engine_cloud_notice": "OptiMaster will keep the local passes and add one AI Mastering version for A/B comparison.",
+        "cloud_token": "AI Mastering token",
+        "cloud_token_placeholder": "Paste token",
+        "cloud_token_saved": "AI Mastering token saved in app settings.",
+        "cloud_token_link": '<a href="https://app.bakuage.com/#/developer">Open AI Mastering developer page</a>',
         "review_source": "Review source analysis",
         "hide_source": "Hide source analysis",
         "optional_config": "Optional YAML config",
@@ -160,15 +183,12 @@ UI_TEXT = {
         "no_candidate_yet": "No version selected",
         "candidate_pending": "Choose a row above to update the selected version.",
         "listen_selected": "Listen to this version",
-        "save_note": "Save listening note",
         "chosen_version": "Chosen version",
         "score": "Score",
         "metrics": "Metrics",
         "why_choose": "Why choose it",
         "rendered_file": "Rendered file",
         "next": "Next",
-        "rating": "Rating (1-5)",
-        "preferences": "Preferences",
         "compare_export": "Compare A/B",
         "final_export": "Export",
         "play_source": "Play A",
@@ -206,8 +226,6 @@ UI_TEXT = {
         "stale_candidate": "This candidate is no longer part of the current session. Create mastering passes again.",
         "missing_rendered_file": "Cannot export missing rendered file:\n{path}",
         "export_failed": "Export failed:\n{error}",
-        "select_note_candidate": "Select a candidate to save a listening note.",
-        "note_saved": "Saved note for {version} in {path}",
         "waveform_loading": "Loading waveform preview...",
         "source_preview_loading": "Loading source preview...",
         "waveform_unavailable": "Waveform preview unavailable for this file.",
@@ -299,6 +317,7 @@ UI_TEXT = {
         "cancelling": "Cancelling after the current FFmpeg step...",
         "selected_source_next": "Selected source: {name}. Next: analyze it.",
         "source_ready_story": "Source ready. Choose a target, then render offline passes.",
+        "source_ready_story_cloud": "Source ready. OptiMaster will create local passes and add one AI Mastering version for comparison.",
         "analyzed_story": "{name} is analyzed: {lufs:.1f} LUFS, {peak:.1f} dBTP, {lra:.1f} LU dynamics. Choose an objective, then create mastering passes.",
         "auto_recommendation": "Auto recommendation: {lufs:.1f} LUFS because {reason}.",
         "step2_complete": "Step 2 complete. Suggested target: {lufs:.1f} LUFS ({reason}).",
@@ -316,6 +335,7 @@ UI_TEXT = {
         "menu_file": "Fichier",
         "menu_settings": "Réglages",
         "menu_language": "Langue",
+        "menu_aimastering_token": "Token AI Mastering",
         "menu_connect": "Contact",
         "menu_choose_audio": "Choisir un fichier audio",
         "menu_choose_output": "Choisir le dossier de sortie",
@@ -324,6 +344,7 @@ UI_TEXT = {
         "tab_source": "1. Source",
         "tab_versions": "2. Versions",
         "tab_listen": "3. A/B",
+        "tab_masterings": "4. Masterings",
         "session": "Session",
         "hero_title": "Assistant de mastering WAV/FLAC hors ligne",
         "hero_subtitle": "Analyse locale, passes LUFS propres et mesurées, comparaison A/B, puis export. Beta {version}.",
@@ -343,6 +364,22 @@ UI_TEXT = {
         "step_choose_source": "Étape 1 : choisis un fichier source.",
         "render_box": "Créer les passes de mastering",
         "render_context_ready": "Source prête. Choisis une cible LUFS, puis crée les passes hors ligne.",
+        "masterings_box": "Dashboard des masterings",
+        "masterings_hint": "Les rendus apparaissent ici pendant leur traitement. Les sessions terminées restent disponibles pour suivi.",
+        "masterings_empty": "Aucun mastering pour l’instant",
+        "check_cloud_jobs": "Vérifier les jobs AI Mastering",
+        "dashboard_running": "En cours",
+        "dashboard_completed": "Terminé",
+        "dashboard_failed": "Échec",
+        "dashboard_cancelled": "Annulé",
+        "mastering_engine": "Comparaison externe",
+        "engine_local": "Passes locales uniquement",
+        "engine_cloud": "Ajouter une version AI Mastering",
+        "engine_cloud_notice": "OptiMaster garde les passes locales et ajoute une version AI Mastering à comparer en A/B.",
+        "cloud_token": "Token AI Mastering",
+        "cloud_token_placeholder": "Colle le token",
+        "cloud_token_saved": "Token AI Mastering enregistré dans les réglages de l’app.",
+        "cloud_token_link": '<a href="https://app.bakuage.com/#/developer">Ouvrir la page développeur AI Mastering</a>',
         "review_source": "Voir l’analyse source",
         "hide_source": "Masquer l’analyse source",
         "optional_config": "Configuration YAML optionnelle",
@@ -402,15 +439,12 @@ UI_TEXT = {
         "no_candidate_yet": "Aucune version sélectionnée",
         "candidate_pending": "Clique une ligne au-dessus pour mettre à jour la version sélectionnée.",
         "listen_selected": "Écouter cette version",
-        "save_note": "Enregistrer la note d’écoute",
         "chosen_version": "Version choisie",
         "score": "Score",
         "metrics": "Mesures",
         "why_choose": "Pourquoi la choisir",
         "rendered_file": "Fichier rendu",
         "next": "Suite",
-        "rating": "Note (1-5)",
-        "preferences": "Préférences",
         "compare_export": "Comparer A/B",
         "final_export": "Export",
         "play_source": "Écouter A",
@@ -448,8 +482,6 @@ UI_TEXT = {
         "stale_candidate": "Cette version ne fait plus partie de la session actuelle. Recrée les passes de mastering.",
         "missing_rendered_file": "Impossible d’exporter ce fichier rendu introuvable :\n{path}",
         "export_failed": "L’export a échoué :\n{error}",
-        "select_note_candidate": "Choisis une version avant de sauver une note d’écoute.",
-        "note_saved": "Note sauvée pour {version} dans {path}",
         "waveform_loading": "Chargement de l’aperçu d’onde...",
         "source_preview_loading": "Chargement de l’aperçu source...",
         "waveform_unavailable": "Aperçu d’onde indisponible pour ce fichier.",
@@ -541,6 +573,7 @@ UI_TEXT = {
         "cancelling": "Annulation après l’étape FFmpeg en cours...",
         "selected_source_next": "Source choisie : {name}. Prochaine étape : analyse.",
         "source_ready_story": "Source prête. Choisis une cible, puis crée les passes hors ligne.",
+        "source_ready_story_cloud": "Source prête. OptiMaster créera les passes locales et ajoutera une version AI Mastering pour comparaison.",
         "analyzed_story": "{name} est analysé : {lufs:.1f} LUFS, {peak:.1f} dBTP, {lra:.1f} LU de dynamique. Choisis un objectif, puis crée les passes de mastering.",
         "auto_recommendation": "Recommandation auto : {lufs:.1f} LUFS car {reason}.",
         "step2_complete": "Étape 2 terminée. Cible suggérée : {lufs:.1f} LUFS ({reason}).",
@@ -712,6 +745,8 @@ class WorkerRequest:
     target_lufs: float | None
     maximize_loudness: bool
     processing_quality: int
+    mastering_backend: str
+    aimastering_token: str | None
     source_analysis: SourceAnalysis | None = None
 
 
@@ -761,6 +796,11 @@ class EngineWorker(QObject):
     def run(self) -> None:
         try:
             config = load_config(self.request.config_path)
+            if self.request.aimastering_token:
+                config = replace(
+                    config,
+                    aimastering=replace(config.aimastering, access_token=self.request.aimastering_token),
+                )
             service = EngineService(config=config)
             if self.request.kind == "analyze":
                 result = service.analyze_source(
@@ -779,6 +819,7 @@ class EngineWorker(QObject):
                     target_lufs=self.request.target_lufs,
                     maximize_loudness=self.request.maximize_loudness,
                     processing_quality=self.request.processing_quality,
+                    mastering_backend=self.request.mastering_backend,
                     progress_callback=self._emit_progress,
                     cancel_callback=self._cancelled.is_set,
                 )
@@ -1247,6 +1288,7 @@ class MainWindow(QMainWindow):
         }
         self._thread: QThread | None = None
         self._worker: EngineWorker | None = None
+        self._close_after_worker = False
         self._active_worker_kind: str | None = None
         self._waveform_thread: QThread | None = None
         self._waveform_worker: WaveformWorker | None = None
@@ -1261,6 +1303,7 @@ class MainWindow(QMainWindow):
         self._last_progress_message: str | None = None
         self._last_progress_percent: int = 0
         self._last_progress_task_index: int = 0
+        self._active_mastering_job: dict[str, object] | None = None
         self._progress_timer = QTimer(self)
         self._progress_timer.setInterval(1000)
         self._progress_timer.timeout.connect(self._refresh_elapsed_progress)
@@ -1314,9 +1357,16 @@ class MainWindow(QMainWindow):
         listening_layout.setSpacing(14)
         listening_layout.addWidget(self._build_listening_tools(), stretch=1)
 
+        masterings_step = QWidget()
+        masterings_layout = QVBoxLayout(masterings_step)
+        masterings_layout.setContentsMargins(0, 0, 0, 0)
+        masterings_layout.setSpacing(14)
+        masterings_layout.addWidget(self._build_masterings_dashboard(), stretch=1)
+
         self.workflow_tabs.addTab(self._scrollable_step(source_step), "Source")
         self.workflow_tabs.addTab(self._scrollable_step(candidate_step), "Versions")
         self.workflow_tabs.addTab(self._scrollable_step(listening_step), "Listen / Export")
+        self.workflow_tabs.addTab(self._scrollable_step(masterings_step), "Masterings")
         root.addWidget(self.workflow_tabs, stretch=1, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         self.setCentralWidget(central)
@@ -1487,6 +1537,16 @@ class MainWindow(QMainWindow):
         for mode in OptimizationMode:
             self.mode_combo.addItem(mode_labels[mode], mode)
         self.mode_combo.setCurrentIndex(1)
+        self.mastering_engine_combo = QComboBox()
+        self.mastering_engine_combo.addItem("Local FFmpeg", MASTERING_BACKEND_LOCAL)
+        self.mastering_engine_combo.addItem("AI Mastering cloud", MASTERING_BACKEND_AIMASTERING)
+        self.mastering_engine_combo.currentIndexChanged.connect(self._on_mastering_backend_changed)
+        self.cloud_notice_label = QLabel(
+            "Cloud mode uploads the source file to AI Mastering and uses AIMASTERING_ACCESS_TOKEN."
+        )
+        self.cloud_notice_label.setObjectName("warningHint")
+        self.cloud_notice_label.setWordWrap(True)
+        self.cloud_notice_label.setVisible(False)
         self.destination_combo = QComboBox()
         for label, value in self.destination_profiles.items():
             self.destination_combo.addItem(label, value)
@@ -1586,6 +1646,7 @@ class MainWindow(QMainWindow):
         self.cancel_render_button.setVisible(False)
 
         self.mode_label = QLabel("Master goal")
+        self.mastering_engine_label = QLabel("Engine")
         self.quick_target_label = QLabel("Quick target")
         self.target_lufs_label = QLabel("Level target")
         self.destination_label = QLabel("Usage")
@@ -1598,35 +1659,41 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.mode_combo, 1, 1)
         layout.addWidget(self.quick_target_label, 1, 2)
         layout.addWidget(self.quick_target_combo, 1, 3)
-        layout.addWidget(self.destination_label, 2, 0)
-        layout.addWidget(self.destination_combo, 2, 1)
-        layout.addWidget(self.target_lufs_label, 2, 2)
-        layout.addWidget(target_lufs_field, 2, 3)
-        layout.addWidget(self.target_hint_label, 3, 0, 1, 4)
-        layout.addWidget(self.max_loudness_checkbox, 4, 0, 1, 2)
-        layout.addWidget(self.strict_tp_checkbox, 4, 2, 1, 2)
-        layout.addWidget(self.max_loudness_warning, 5, 0, 1, 4)
-        layout.addWidget(self.listen_check_button, 6, 0, 1, 2, Qt.AlignmentFlag.AlignLeft)
-        layout.addWidget(self.listen_check_hint, 6, 0, 1, 4)
-        layout.addWidget(self.output_label, 7, 0)
-        layout.addWidget(self.output_edit, 7, 1)
-        layout.addWidget(self.output_button, 7, 2, Qt.AlignmentFlag.AlignRight)
-        layout.addWidget(self.config_label, 8, 0)
-        layout.addWidget(self.config_edit, 8, 1)
-        layout.addWidget(self.config_button, 8, 2, Qt.AlignmentFlag.AlignRight)
-        layout.addWidget(self.template_button, 8, 3, Qt.AlignmentFlag.AlignRight)
-        layout.addWidget(self.advanced_button, 9, 0, 1, 4)
-        layout.addWidget(self.render_status_label, 10, 0)
-        layout.addWidget(self.render_work_pulse, 10, 1, Qt.AlignmentFlag.AlignLeft)
-        layout.addWidget(self.render_progress_bar, 10, 2)
-        layout.addWidget(self.cancel_render_button, 10, 3, Qt.AlignmentFlag.AlignRight)
-        layout.addWidget(self.optimize_button, 11, 0, 1, 4)
+        layout.addWidget(self.mastering_engine_label, 2, 0)
+        layout.addWidget(self.mastering_engine_combo, 2, 1)
+        layout.addWidget(self.destination_label, 2, 2)
+        layout.addWidget(self.destination_combo, 2, 3)
+        layout.addWidget(self.target_lufs_label, 3, 0)
+        layout.addWidget(target_lufs_field, 3, 1)
+        layout.addWidget(self.target_hint_label, 3, 2, 1, 2)
+        layout.addWidget(self.cloud_notice_label, 4, 0, 1, 4)
+        layout.addWidget(self.max_loudness_checkbox, 5, 0, 1, 2)
+        layout.addWidget(self.strict_tp_checkbox, 5, 2, 1, 2)
+        layout.addWidget(self.max_loudness_warning, 6, 0, 1, 4)
+        layout.addWidget(self.listen_check_button, 7, 0, 1, 2, Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(self.listen_check_hint, 7, 0, 1, 4)
+        layout.addWidget(self.output_label, 8, 0)
+        layout.addWidget(self.output_edit, 8, 1)
+        layout.addWidget(self.output_button, 8, 2, Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(self.config_label, 9, 0)
+        layout.addWidget(self.config_edit, 9, 1)
+        layout.addWidget(self.config_button, 9, 2, Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(self.template_button, 9, 3, Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(self.advanced_button, 10, 0, 1, 4)
+        layout.addWidget(self.render_status_label, 11, 0)
+        layout.addWidget(self.render_work_pulse, 11, 1, Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(self.render_progress_bar, 11, 2)
+        layout.addWidget(self.cancel_render_button, 11, 3, Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(self.optimize_button, 12, 0, 1, 4)
 
         self.mastering_widgets = [
             self.render_context_label,
             self.source_review_button,
             self.mode_label,
             self.mode_combo,
+            self.mastering_engine_label,
+            self.mastering_engine_combo,
+            self.cloud_notice_label,
             self.quick_target_label,
             self.quick_target_combo,
             self.target_hint_label,
@@ -1750,22 +1817,12 @@ class MainWindow(QMainWindow):
             label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.MinimumExpanding)
         self.best_labels["reasons"].setMinimumHeight(76)
         self.best_labels["path"].setMinimumHeight(48)
-        self.rating_spin = QSpinBox()
-        self.rating_spin.setRange(1, 5)
-        self.rating_spin.setValue(3)
-        self.rating_spin.setMinimumHeight(44)
         self.listen_selected_button = QPushButton("Compare in A/B")
         self.listen_selected_button.setObjectName("stepAction")
         self.listen_selected_button.setMinimumHeight(44)
         self.listen_selected_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         set_lucide_icon(self.listen_selected_button, "headphones")
         self.listen_selected_button.clicked.connect(lambda: self.workflow_tabs.setCurrentIndex(2))
-        self.save_note_button = QPushButton("Save listening note")
-        self.save_note_button.setObjectName("secondaryAction")
-        self.save_note_button.setMinimumHeight(44)
-        self.save_note_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        set_lucide_icon(self.save_note_button, "save")
-        self.save_note_button.clicked.connect(self._save_listening_note)
         self.new_analysis_button = QPushButton("New analysis")
         self.new_analysis_button.setObjectName("secondaryAction")
         self.new_analysis_button.setMinimumHeight(44)
@@ -1789,11 +1846,9 @@ class MainWindow(QMainWindow):
         add_best_row(3, "why_choose", "Why choose it", self.best_labels["reasons"])
         add_best_row(4, "rendered_file", "Rendered file", self.best_labels["path"])
         add_best_row(5, "next", "Next", self.listen_selected_button)
-        add_best_row(6, "rating", "Rating (1-5)", self.rating_spin)
-        add_best_row(7, "preferences", "Preferences", self.save_note_button)
-        add_best_row(8, "new_analysis", "New analysis", self.new_analysis_button)
+        add_best_row(6, "new_analysis", "New analysis", self.new_analysis_button)
         self.best_row_labels["new_analysis"].setVisible(False)
-        for row in (5, 6, 7, 8):
+        for row in (5, 6):
             best_layout.setRowMinimumHeight(row, 48)
         return self.best_box
 
@@ -1959,6 +2014,34 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.details_panel)
         return self.results_box
 
+    def _build_masterings_dashboard(self) -> QGroupBox:
+        self.masterings_box = QGroupBox("Masterings dashboard")
+        layout = QVBoxLayout(self.masterings_box)
+        self.masterings_hint_label = QLabel(
+            "Render jobs appear here while they run. Finished sessions stay available for review."
+        )
+        self.masterings_hint_label.setObjectName("statusHint")
+        self.masterings_hint_label.setWordWrap(True)
+        self.masterings_table = QTableWidget(0, 5)
+        self.masterings_table.setHorizontalHeaderLabels(["Status", "Source", "Objective", "Progress", "Result"])
+        self.masterings_table.setAlternatingRowColors(True)
+        self.masterings_table.setShowGrid(False)
+        self.masterings_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.masterings_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.masterings_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.masterings_table.verticalHeader().setVisible(False)
+        self.masterings_table.verticalHeader().setDefaultSectionSize(42)
+        self.masterings_table.setMinimumHeight(300)
+        self.masterings_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.check_cloud_jobs_button = QPushButton("Check AI Mastering jobs")
+        self.check_cloud_jobs_button.setObjectName("secondaryAction")
+        set_lucide_icon(self.check_cloud_jobs_button, "refresh")
+        self.check_cloud_jobs_button.clicked.connect(self._check_aimastering_jobs)
+        layout.addWidget(self.masterings_hint_label)
+        layout.addWidget(self.masterings_table)
+        layout.addWidget(self.check_cloud_jobs_button)
+        return self.masterings_box
+
     def _apply_results_table_layout(self) -> None:
         header = self.results_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
@@ -1973,6 +2056,14 @@ class MainWindow(QMainWindow):
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+
+    def _apply_masterings_table_layout(self) -> None:
+        header = self.masterings_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
 
     def _build_menu(self) -> None:
@@ -1991,6 +2082,10 @@ class MainWindow(QMainWindow):
         self.file_menu.addAction(self.quit_action)
 
         self.settings_menu = self.menuBar().addMenu("Settings")
+        self.aimastering_token_action = QAction("AI Mastering token", self)
+        self.aimastering_token_action.triggered.connect(self._edit_aimastering_token)
+        self.settings_menu.addAction(self.aimastering_token_action)
+        self.settings_menu.addSeparator()
         self.language_menu = self.settings_menu.addMenu("Language")
         self.language_group = QActionGroup(self)
         self.language_group.setExclusive(True)
@@ -2008,6 +2103,31 @@ class MainWindow(QMainWindow):
         self.maker_action = QAction("Meet the maker", self)
         self.maker_action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl("https://mathieuluyten.be/")))
         self.connect_menu.addAction(self.maker_action)
+
+    def _edit_aimastering_token(self) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle(self._t("menu_aimastering_token"))
+        layout = QVBoxLayout(dialog)
+        label = QLabel(self._t("engine_cloud_notice"))
+        label.setWordWrap(True)
+        token_link = QLabel(self._t("cloud_token_link"))
+        token_link.setOpenExternalLinks(True)
+        token_link.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+        token_edit = QLineEdit()
+        token_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        token_edit.setPlaceholderText(self._t("cloud_token_placeholder"))
+        token_edit.setText(str(self.settings.value("aimastering/access_token", "")))
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(label)
+        layout.addWidget(token_link)
+        layout.addWidget(token_edit)
+        layout.addWidget(buttons)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self.settings.setValue("aimastering/access_token", token_edit.text().strip())
+        self.status_label.setText(self._t("cloud_token_saved"))
 
     def _t(self, key: str, **kwargs: object) -> str:
         text = UI_TEXT.get(self.language, UI_TEXT["en"]).get(key, UI_TEXT["en"].get(key, key))
@@ -2027,11 +2147,20 @@ class MainWindow(QMainWindow):
                 combo.setItemText(index, text)
                 return
 
+    def _mode_display_name(self, mode: OptimizationMode) -> str:
+        labels = {
+            OptimizationMode.SAFE: self._t("mode_safe"),
+            OptimizationMode.BALANCED: self._t("mode_balanced"),
+            OptimizationMode.LOUDER: self._t("mode_louder"),
+        }
+        return labels.get(mode, mode.value)
+
     def _apply_language_texts(self) -> None:
         self.setWindowTitle(f"{APP_TITLE} - {APP_DISPLAY_VERSION}")
         self.version_label.setText(f"Beta {APP_DISPLAY_VERSION}")
         self.file_menu.setTitle(self._t("menu_file"))
         self.settings_menu.setTitle(self._t("menu_settings"))
+        self.aimastering_token_action.setText(self._t("menu_aimastering_token"))
         self.language_menu.setTitle(self._t("menu_language"))
         self.connect_menu.setTitle(self._t("menu_connect"))
         self.choose_input_action.setText(self._t("menu_choose_audio"))
@@ -2042,6 +2171,7 @@ class MainWindow(QMainWindow):
         self.workflow_tabs.setTabText(0, self._t("tab_source"))
         self.workflow_tabs.setTabText(1, self._t("tab_versions"))
         self.workflow_tabs.setTabText(2, self._t("tab_listen"))
+        self.workflow_tabs.setTabText(3, self._t("tab_masterings"))
         self.session_box.setTitle(self._t("session"))
         self.hero_title.setText(self._t("hero_title"))
         self.hero_subtitle.setText(self._t("hero_subtitle", version=APP_DISPLAY_VERSION))
@@ -2069,6 +2199,10 @@ class MainWindow(QMainWindow):
         self._set_combo_text(self.mode_combo, OptimizationMode.SAFE, self._t("mode_safe"))
         self._set_combo_text(self.mode_combo, OptimizationMode.BALANCED, self._t("mode_balanced"))
         self._set_combo_text(self.mode_combo, OptimizationMode.LOUDER, self._t("mode_louder"))
+        self.mastering_engine_label.setText(self._t("mastering_engine"))
+        self._set_combo_text(self.mastering_engine_combo, MASTERING_BACKEND_LOCAL, self._t("engine_local"))
+        self._set_combo_text(self.mastering_engine_combo, MASTERING_BACKEND_AIMASTERING, self._t("engine_cloud"))
+        self.cloud_notice_label.setText(self._t("engine_cloud_notice"))
         self._set_combo_text(self.destination_combo, "streaming_prudent", self._t("destination_streaming"))
         self._set_combo_text(self.destination_combo, "club_loud", self._t("destination_soundcloud"))
         self._set_combo_text(self.destination_combo, "archive_safe", self._t("destination_archive"))
@@ -2120,7 +2254,6 @@ class MainWindow(QMainWindow):
             self.best_labels["name"].setText(self._t("no_candidate_yet"))
             self.best_labels["reasons"].setText(self._t("candidate_pending"))
         self.listen_selected_button.setText(self._t("compare_ab"))
-        self.save_note_button.setText(self._t("save_note"))
         for key, label in self.best_row_labels.items():
             label.setText(self._t(key))
 
@@ -2143,6 +2276,10 @@ class MainWindow(QMainWindow):
         self._sync_ab_version_combo()
         self.history_button.setText(self._t("hide_history") if not self.history_table.isHidden() else self._t("show_history"))
         self.history_table.setHorizontalHeaderLabels(["Date (UTC)", "Session", self._t("master_goal"), self._t("best_box"), self._t("tab_source")])
+        self.masterings_box.setTitle(self._t("masterings_box"))
+        self.masterings_hint_label.setText(self._t("masterings_hint"))
+        self.check_cloud_jobs_button.setText(self._t("check_cloud_jobs"))
+        self.masterings_table.setHorizontalHeaderLabels(["Status", self._t("tab_source"), self._t("master_goal"), "Progress", self._t("best_box")])
 
         self._sync_results_guidance()
         self.results_compare_button.setText(self._t("compare_ab"))
@@ -2774,8 +2911,16 @@ class MainWindow(QMainWindow):
             target_lufs=self.target_lufs_spin.value(),
             maximize_loudness=self.max_loudness_checkbox.isChecked(),
             processing_quality=self.processing_slider.value(),
+            mastering_backend=str(self.mastering_engine_combo.currentData()),
+            aimastering_token=str(self.settings.value("aimastering/access_token", "")).strip() or None,
             source_analysis=source_analysis,
         )
+
+    def _on_mastering_backend_changed(self, *_args: object) -> None:
+        self.cloud_notice_label.setVisible(self.mastering_engine_combo.currentData() == MASTERING_BACKEND_AIMASTERING)
+        if self.current_analysis is not None:
+            self.render_context_label.setText(self._render_story_text())
+        self._update_actions()
 
     def _update_processing_hint(self, *_args: object) -> None:
         hints = {
@@ -2815,6 +2960,15 @@ class MainWindow(QMainWindow):
             return
 
         self._active_worker_kind = request.kind
+        if request.kind == "optimize":
+            self._active_mastering_job = {
+                "status": self._t("dashboard_running"),
+                "source": Path(request.input_file).name,
+                "objective": self._mode_display_name(request.mode),
+                "progress": "0%",
+                "result": self._t("preparing_render"),
+            }
+            self._refresh_masterings_dashboard()
         self._progress_started_at = time.monotonic()
         self._last_progress_message = None
         self._last_progress_percent = 0
@@ -2835,7 +2989,7 @@ class MainWindow(QMainWindow):
             self._position_render_overlay()
             tasks = self._progress_task_states(request.kind, self._t("preparing_render"), 0)
             self.render_status_label.setText(self._rich_progress_text(self._t("preparing_render"), 0, animated=True, tasks=tasks))
-            self.render_overlay.start(self._plain_progress_text(self._t("preparing_render"), 0), tasks=tasks)
+            self.workflow_tabs.setCurrentIndex(3)
         else:
             self.progress_bar.setValue(0)
             self.progress_bar.setVisible(True)
@@ -2861,9 +3015,24 @@ class MainWindow(QMainWindow):
             return
         self.cancel_render_button.setEnabled(False)
         self.render_status_label.setText(self._t("cancelling"))
-        self.render_overlay.set_message("Cancelling...")
+        if self._active_mastering_job is not None:
+            self._active_mastering_job["status"] = self._t("dashboard_cancelled")
+            self._active_mastering_job["result"] = self._t("cancelling")
+            self._refresh_masterings_dashboard()
         self._worker.cancel()
         self._sync_button_cursors()
+
+    def closeEvent(self, event: object) -> None:
+        if self._thread is not None and self._worker is not None:
+            self._close_after_worker = True
+            self._cancel_active_worker()
+            event.ignore()
+            return
+        if self._waveform_thread is not None:
+            self._pending_waveform_source = None
+            self._waveform_thread.quit()
+            self._waveform_thread.wait(3000)
+        super().closeEvent(event)
 
     def _cleanup_worker(self) -> None:
         if self._thread is None or self._worker is None:
@@ -2888,11 +3057,13 @@ class MainWindow(QMainWindow):
             self.render_progress_bar.setVisible(False)
             self.cancel_render_button.setVisible(False)
             self.render_status_label.setMinimumHeight(52)
-            self.render_overlay.stop()
         else:
             self.status_label.setMinimumHeight(44)
             self.progress_bar.setVisible(False)
         self._update_actions()
+        if self._close_after_worker:
+            self._close_after_worker = False
+            self.close()
 
     def _on_progress(self, message: str, percent: int) -> None:
         message = self._display_progress_message(message)
@@ -2911,8 +3082,10 @@ class MainWindow(QMainWindow):
             tasks = self._progress_task_states(self._active_worker_kind, message, percent)
             self.render_status_label.setText(self._rich_progress_text(message, percent, animated=True, tasks=tasks))
             self.render_progress_bar.setValue(percent)
-            self.render_overlay.set_message(self._plain_progress_text(message, percent))
-            self.render_overlay.set_tasks(tasks)
+            if self._active_mastering_job is not None:
+                self._active_mastering_job["progress"] = f"{percent}%"
+                self._active_mastering_job["result"] = message
+                self._refresh_masterings_dashboard()
             return
         tasks = self._progress_task_states(self._active_worker_kind, message, percent)
         self.status_label.setText(self._rich_progress_text(message, percent, tasks=tasks))
@@ -2946,8 +3119,16 @@ class MainWindow(QMainWindow):
             self.ab_validated_candidate = None
             self._populate_analysis(result.analysis)
             self._populate_session(result)
+            if self._active_mastering_job is not None:
+                best = result.best_candidate
+                self._active_mastering_job["status"] = self._t("dashboard_completed")
+                self._active_mastering_job["progress"] = "100%"
+                self._active_mastering_job["result"] = (
+                    f"{best.preset.name} ({best.score:.1f})" if best is not None else self._t("render_complete")
+                )
             if self.current_output_dir is not None:
                 self.history_store.append(result, self.current_output_dir)
+            self._active_mastering_job = None
             self._load_history()
             self.status_label.setText(self._t("step3_complete"))
             self.render_status_label.setText(self._t("render_complete"))
@@ -2960,7 +3141,11 @@ class MainWindow(QMainWindow):
             if self._active_worker_kind == "optimize":
                 self.render_status_label.setText(self._t("render_cancelled"))
                 self.render_progress_bar.setValue(0)
-                self.render_overlay.set_message(self._t("cancelled"))
+                if self._active_mastering_job is not None:
+                    self._active_mastering_job["status"] = self._t("dashboard_cancelled")
+                    self._active_mastering_job["progress"] = "0%"
+                    self._active_mastering_job["result"] = self._t("render_cancelled")
+                    self._refresh_masterings_dashboard()
             else:
                 self.status_label.setText(self._t("analysis_cancelled"))
                 self.progress_bar.setValue(0)
@@ -2970,7 +3155,11 @@ class MainWindow(QMainWindow):
             self.render_work_pulse.stop()
             self.render_status_label.setText(self._t("render_failed"))
             self.render_progress_bar.setValue(0)
-            self.render_overlay.set_message(self._t("render_failed"))
+            if self._active_mastering_job is not None:
+                self._active_mastering_job["status"] = self._t("dashboard_failed")
+                self._active_mastering_job["progress"] = "0%"
+                self._active_mastering_job["result"] = self._t("render_failed")
+                self._refresh_masterings_dashboard()
         else:
             self.status_label.setText(self._t("task_failed"))
             self.progress_bar.setValue(0)
@@ -3563,17 +3752,6 @@ class MainWindow(QMainWindow):
                 return destination
             index += 1
 
-    def _save_listening_note(self) -> None:
-        candidate = self._selected_candidate()
-        if candidate is None:
-            self._show_error(self._t("select_note_candidate"))
-            return
-        config = load_config(self.config_edit.text().strip() or None)
-        preferences_path = (self.current_output_dir or Path.cwd() / "renders") / "preferences.json"
-        service = EngineService(config=config, preference_path=preferences_path)
-        service.add_listening_note(candidate.preset.name, self.rating_spin.value())
-        self.status_label.setText(self._t("note_saved", version=self._candidate_version_label(candidate), path=preferences_path))
-
     def _start_new_analysis(self) -> None:
         self._stop_playback()
         self.current_analysis = None
@@ -3732,6 +3910,122 @@ class MainWindow(QMainWindow):
             for col, value in enumerate(values):
                 self.history_table.setItem(row, col, QTableWidgetItem(value))
         self._apply_history_table_layout()
+        self._refresh_masterings_dashboard()
+
+    def _refresh_masterings_dashboard(self) -> None:
+        if not hasattr(self, "masterings_table"):
+            return
+        rows: list[list[str]] = []
+        if self._active_mastering_job is not None:
+            rows.append(
+                [
+                    str(self._active_mastering_job.get("status", "")),
+                    str(self._active_mastering_job.get("source", "")),
+                    str(self._active_mastering_job.get("objective", "")),
+                    str(self._active_mastering_job.get("progress", "")),
+                    str(self._active_mastering_job.get("result", "")),
+                ]
+            )
+        for entry in self.history_store.read_all():
+            rows.append(
+                [
+                    self._t("dashboard_completed"),
+                    Path(entry.source_path).name,
+                    entry.mode.title(),
+                    "100%",
+                    (
+                        f"{entry.best_preset} ({entry.best_score:.1f})"
+                        if entry.best_preset is not None and entry.best_score is not None
+                        else "n/a"
+                    ),
+                ]
+            )
+        for job in AiMasteringJobStore().read_all():
+            if job.status in {"succeeded", "downloaded"}:
+                continue
+            rows.append(
+                [
+                    f"AI {job.status}",
+                    Path(job.source_path).name,
+                    job.mode.title(),
+                    f"{job.progress}%",
+                    job.message,
+                ]
+            )
+        if not rows:
+            rows.append([self._t("masterings_empty"), "", "", "", ""])
+        self.masterings_table.setRowCount(len(rows))
+        for row, values in enumerate(rows):
+            for col, value in enumerate(values):
+                self.masterings_table.setItem(row, col, QTableWidgetItem(value))
+        self._apply_masterings_table_layout()
+
+    def _check_aimastering_jobs(self) -> None:
+        store = AiMasteringJobStore()
+        jobs = store.read_all()
+        if not jobs:
+            self.status_label.setText(self._t("masterings_empty"))
+            return
+        config = load_config(self.config_edit.text().strip() or None)
+        token = str(self.settings.value("aimastering/access_token", "")).strip()
+        if token:
+            config = replace(config, aimastering=replace(config.aimastering, access_token=token))
+        client = AiMasteringClient(config.aimastering)
+        updated_any = False
+        for job in jobs:
+            if job.status in {"succeeded", "downloaded", "failed", "canceled"}:
+                continue
+            mastering = client.get_mastering(job.mastering_id)
+            status = str(mastering.get("status", job.status))
+            progression = mastering.get("progression")
+            job.status = status
+            job.progress = int(max(0.0, min(float(progression), 1.0)) * 100) if isinstance(progression, int | float) else job.progress
+            job.message = f"AI Mastering status: {status}"
+            output_audio_id = mastering.get("output_audio_id")
+            if status == "succeeded" and isinstance(output_audio_id, int):
+                job.output_audio_id = output_audio_id
+                client.download_output(output_audio_id, Path(job.output_path))
+                job.status = "downloaded"
+                job.progress = 100
+                job.message = "AI Mastering result downloaded"
+                self._attach_aimastering_job_to_current_session(job, config)
+            store.update(job)
+            updated_any = True
+        self._refresh_masterings_dashboard()
+        self.status_label.setText("AI Mastering jobs updated." if updated_any else "No pending AI Mastering jobs.")
+
+    def _attach_aimastering_job_to_current_session(self, job: AiMasteringJob, config) -> None:
+        if self.current_session is None or self.current_analysis is None:
+            return
+        if self.current_analysis.source_path != Path(job.source_path).resolve():
+            return
+        output_path = Path(job.output_path)
+        if not output_path.exists():
+            return
+        output_metrics = analyze_loudness(output_path, ffmpeg_binary=config.ffmpeg_binary)
+        score, reasons = score_candidate(
+            metrics=output_metrics,
+            cfg=config.scoring,
+            source_metrics=self.current_analysis.metrics,
+            mode=self.current_session.mode,
+        )
+        reasons.append("Downloaded from a queued AI Mastering remote job.")
+        self.current_session.candidates.append(
+            CandidateResult(
+                preset=CandidatePreset(
+                    name="aimastering_cloud",
+                    description="AI Mastering cloud render downloaded after remote processing.",
+                    ffmpeg_filter="remote:aimastering",
+                ),
+                output_path=output_path,
+                source_metrics=self.current_analysis.metrics,
+                output_metrics=output_metrics,
+                score=score,
+                reasons=reasons,
+            )
+        )
+        self.current_session.candidates.sort(key=lambda item: item.score, reverse=True)
+        self._populate_session(self.current_session)
 
     def _toggle_history(self) -> None:
         visible = self.history_table.isHidden()
@@ -3779,25 +4073,31 @@ class MainWindow(QMainWindow):
         self._update_actions()
 
     def _set_busy(self, busy: bool) -> None:
-        self.workflow_tabs.tabBar().setDisabled(busy)
+        is_rendering = busy and self._active_worker_kind == "optimize"
+        self.workflow_tabs.tabBar().setDisabled(busy and not is_rendering)
         for widget in [*self.mastering_widgets, *self.advanced_widgets]:
             widget.setDisabled(busy)
-        for widget in [
+        blocked_widgets = [
             self.analyze_button,
             self.processing_slider,
-            self.export_button,
             self.new_analysis_button,
-            self.play_source_button,
-            self.play_candidate_button,
-            self.stop_audio_button,
-            self.ab_version_combo,
-            self.listen_selected_button,
-            self.results_compare_button,
-            self.save_note_button,
             self.listen_check_button,
             self.change_source_button,
             self.input_edit,
-        ]:
+        ]
+        if not is_rendering:
+            blocked_widgets.extend(
+                [
+                    self.export_button,
+                    self.play_source_button,
+                    self.play_candidate_button,
+                    self.stop_audio_button,
+                    self.ab_version_combo,
+                    self.listen_selected_button,
+                    self.results_compare_button,
+                ]
+            )
+        for widget in blocked_widgets:
             widget.setDisabled(busy)
         self._sync_button_cursors()
 
@@ -3824,27 +4124,32 @@ class MainWindow(QMainWindow):
         self.analyze_button.setEnabled(has_input and not has_analysis and self._thread is None)
         self.analyze_button.setText(self._t("analyzed") if has_analysis else self._t("analyze_source"))
         self.optimize_button.setEnabled(has_analysis and self._thread is None)
-        self.export_button.setEnabled(self._thread is None and has_candidate)
+        is_rendering = self._thread is not None and self._active_worker_kind == "optimize"
+        can_use_existing_versions = self._thread is None or is_rendering
+        self.export_button.setEnabled(can_use_existing_versions and has_candidate)
         self.export_button.setToolTip("" if has_candidate else self._t("select_rendered_candidate"))
-        self.ab_version_combo.setEnabled(self._thread is None and has_candidate)
+        self.ab_version_combo.setEnabled(can_use_existing_versions and has_candidate)
         self.new_analysis_button.setEnabled(self._thread is None)
-        self.play_candidate_button.setEnabled(self._thread is None and has_candidate)
-        self.stop_audio_button.setEnabled(self._thread is None and self.current_playback is not None)
-        self.listen_selected_button.setEnabled(self._thread is None and has_candidate)
-        self.results_compare_button.setEnabled(self._thread is None and has_candidate)
-        self.save_note_button.setEnabled(self._thread is None and has_candidate)
-        can_choose_target = self._thread is None and not self.max_loudness_checkbox.isChecked()
+        self.play_candidate_button.setEnabled(can_use_existing_versions and has_candidate)
+        self.stop_audio_button.setEnabled(can_use_existing_versions and self.current_playback is not None)
+        self.listen_selected_button.setEnabled(can_use_existing_versions and has_candidate)
+        self.results_compare_button.setEnabled(can_use_existing_versions and has_candidate)
+        is_cloud = self.mastering_engine_combo.currentData() == MASTERING_BACKEND_AIMASTERING
+        can_choose_target = self._thread is None and (is_cloud or not self.max_loudness_checkbox.isChecked())
         self.quick_target_combo.setEnabled(can_choose_target)
         self.target_lufs_spin.setEnabled(can_choose_target)
+        self.max_loudness_checkbox.setEnabled(self._thread is None)
+        self.cloud_notice_label.setVisible(has_analysis and is_cloud)
         self.max_loudness_warning.setVisible(has_analysis and self.max_loudness_checkbox.isChecked())
         show_listen_check = has_analysis and self.max_loudness_checkbox.isChecked()
-        can_listen_check = self._thread is None and has_candidates and has_candidate
+        can_listen_check = can_use_existing_versions and has_candidates and has_candidate
         self.listen_check_button.setVisible(show_listen_check and can_listen_check)
         self.listen_check_button.setEnabled(can_listen_check)
         self.listen_check_hint.setVisible(show_listen_check and not can_listen_check)
         self.workflow_tabs.setTabEnabled(0, True)
         self.workflow_tabs.setTabEnabled(1, has_candidates)
         self.workflow_tabs.setTabEnabled(2, has_candidate)
+        self.workflow_tabs.setTabEnabled(3, True)
         self._sync_results_guidance()
         self._sync_control_visibility(has_input, has_analysis)
         self._sync_button_cursors()
@@ -3874,6 +4179,8 @@ class MainWindow(QMainWindow):
         for widget in self.advanced_widgets:
             widget.setVisible(self.advanced_options_visible)
         if has_analysis:
+            is_cloud = self.mastering_engine_combo.currentData() == MASTERING_BACKEND_AIMASTERING
+            self.cloud_notice_label.setVisible(is_cloud)
             show_listen_check = self.max_loudness_checkbox.isChecked()
             has_candidate = self._selected_candidate() is not None
             has_candidates = bool(self.current_session and self.current_session.candidates)
@@ -3960,6 +4267,8 @@ class MainWindow(QMainWindow):
             self.render_overlay.raise_()
 
     def _render_story_text(self) -> str:
+        if self.mastering_engine_combo.currentData() == MASTERING_BACKEND_AIMASTERING:
+            return self._t("source_ready_story_cloud")
         if self.current_analysis is None:
             return self._t("source_ready_story")
         metrics = self.current_analysis.metrics

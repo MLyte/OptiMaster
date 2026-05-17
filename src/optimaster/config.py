@@ -20,6 +20,19 @@ class ScoringConfig:
 
 
 @dataclass(slots=True)
+class AiMasteringConfig:
+    base_url: str = "https://api.bakuage.com"
+    token_env: str = "AIMASTERING_ACCESS_TOKEN"
+    access_token: str | None = None
+    auth_prefix: str = ""
+    poll_interval_seconds: float = 3.0
+    timeout_seconds: float = 60.0
+    job_timeout_seconds: float = 900.0
+    preset: str = "general"
+    bit_depth: int = 24
+
+
+@dataclass(slots=True)
 class AppConfig:
     ffmpeg_binary: str = "ffmpeg"
     output_format: str = "wav"
@@ -34,6 +47,7 @@ class AppConfig:
         ]
     )
     scoring: ScoringConfig = field(default_factory=ScoringConfig)
+    aimastering: AiMasteringConfig = field(default_factory=AiMasteringConfig)
 
 
 def load_config(path: str | Path | None) -> AppConfig:
@@ -44,6 +58,7 @@ def load_config(path: str | Path | None) -> AppConfig:
 
     scoring_raw = raw.get("scoring", {})
     presets_raw = raw.get("presets", {})
+    aimastering_raw = raw.get("aimastering", {})
     mode = str(raw.get("default_mode", OptimizationMode.BALANCED.value)).lower()
     return AppConfig(
         ffmpeg_binary=raw.get("ffmpeg_binary", "ffmpeg"),
@@ -67,5 +82,15 @@ def load_config(path: str | Path | None) -> AppConfig:
             min_lra=float(scoring_raw.get("min_lra", 5.0)),
             preferred_lra_min=float(scoring_raw.get("preferred_lra_min", 6.0)),
             max_lufs_delta_from_source=float(scoring_raw.get("max_lufs_delta_from_source", 2.0)),
+        ),
+        aimastering=AiMasteringConfig(
+            base_url=str(aimastering_raw.get("base_url", "https://api.bakuage.com")).rstrip("/"),
+            token_env=str(aimastering_raw.get("token_env", "AIMASTERING_ACCESS_TOKEN")),
+            auth_prefix=str(aimastering_raw.get("auth_prefix", "")),
+            poll_interval_seconds=float(aimastering_raw.get("poll_interval_seconds", 3.0)),
+            timeout_seconds=float(aimastering_raw.get("timeout_seconds", 60.0)),
+            job_timeout_seconds=float(aimastering_raw.get("job_timeout_seconds", 900.0)),
+            preset=str(aimastering_raw.get("preset", "general")),
+            bit_depth=int(aimastering_raw.get("bit_depth", 24)),
         ),
     )

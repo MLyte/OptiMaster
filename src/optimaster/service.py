@@ -6,12 +6,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Callable
 
+from optimaster.aimastering_client import AiMasteringClient
+from optimaster.cloud_jobs import AiMasteringJob, AiMasteringJobStore
 from optimaster.config import AppConfig
 from optimaster.errors import OperationCancelledError
 from optimaster.ffmpeg import analyze_loudness, assert_ffmpeg_available, render_candidate, validate_input_file
 from optimaster.models import (
     CandidatePreset,
     CandidateResult,
+    MasteringValidation,
     OptimizationMode,
     OptimizationSession,
     SourceAnalysis,
@@ -37,6 +40,8 @@ PRE_LOUDNESS_FILTER = (
     "asoftclip=threshold=0.98"
 )
 DEFAULT_TARGET_LUFS = -12.0
+MASTERING_BACKEND_LOCAL = "local"
+MASTERING_BACKEND_AIMASTERING = "aimastering"
 
 
 DESTINATION_SCORING_OVERRIDES = {
@@ -60,6 +65,25 @@ DESTINATION_SCORING_OVERRIDES = {
         "hard_true_peak_max": -0.9,
         "min_lra": 5.5,
         "preferred_lra_min": 6.5,
+    },
+    "spotify": {
+        "target_lufs_min": -15.0,
+        "target_lufs_max": -13.0,
+        "ideal_true_peak_max": -1.2,
+        "hard_true_peak_max": -1.0,
+    },
+    "youtube": {
+        "target_lufs_min": -15.0,
+        "target_lufs_max": -13.0,
+        "ideal_true_peak_max": -1.2,
+        "hard_true_peak_max": -1.0,
+    },
+    "hard_techno_club": {
+        "target_lufs_min": -6.0,
+        "target_lufs_max": -4.5,
+        "ideal_true_peak_max": -0.4,
+        "hard_true_peak_max": -0.2,
+        "max_lufs_delta_from_source": 4.0,
     },
 }
 
@@ -106,6 +130,30 @@ class EngineService:
         store.save_note(preset_name=preset_name, rating=rating)
         return preference_path
 
+    def validate_mastering(
+        self,
+        input_file: str | Path,
+        target_lufs: float,
+        target_tp: float = -1.0,
+        lufs_tolerance: float = 0.5,
+        tp_tolerance: float = 0.2,
+    ) -> MasteringValidation:
+        analysis = self.analyze_source(input_file)
+        measured_lufs = analysis.metrics.integrated_lufs
+        measured_tp = analysis.metrics.true_peak_dbtp
+        lufs_ok = abs(measured_lufs - target_lufs) <= lufs_tolerance
+        tp_ok = measured_tp <= (target_tp + tp_tolerance)
+        status = "PASS" if (lufs_ok and tp_ok) else "WARN" if (lufs_ok or tp_ok) else "FAIL"
+        return MasteringValidation(
+            target_lufs=target_lufs,
+            measured_lufs=measured_lufs,
+            target_tp=target_tp,
+            measured_tp=measured_tp,
+            lufs_tolerance=lufs_tolerance,
+            tp_tolerance=tp_tolerance,
+            status=status,
+        )
+
     def optimize(
         self,
         input_file: str | Path,
@@ -117,6 +165,7 @@ class EngineService:
         target_lufs: float | None = None,
         maximize_loudness: bool = False,
         processing_quality: int = 1,
+        mastering_backend: str = MASTERING_BACKEND_LOCAL,
         progress_callback: ProgressCallback | None = None,
         cancel_callback: CancelCallback | None = None,
     ) -> OptimizationSession:
@@ -220,6 +269,23 @@ class EngineService:
                 )
             )
 
+        if mastering_backend == MASTERING_BACKEND_AIMASTERING:
+            try:
+                self._queue_aimastering_job(
+                        input_path=input_path,
+                        out_dir=out_dir,
+                        analysis=analysis,
+                        scoring_cfg=scoring_cfg,
+                        target_lufs=target_lufs,
+                        selected_mode=selected_mode,
+                        progress_callback=progress_callback,
+                        cancel_callback=cancel_callback,
+                    )
+            except OperationCancelledError:
+                raise
+            except Exception as exc:
+                self._notify(progress_callback, f"AI Mastering candidate skipped: {exc}", 90)
+
         results.sort(key=lambda item: item.score, reverse=True)
         self._raise_if_cancelled(cancel_callback)
         self._notify(progress_callback, "Writing session exports", 92)
@@ -232,6 +298,55 @@ class EngineService:
         self._write_exports(session, out_dir)
         self._notify(progress_callback, "Optimization complete", 100)
         return session
+
+    def _queue_aimastering_job(
+        self,
+        input_path: Path,
+        out_dir: Path,
+        analysis: SourceAnalysis,
+        scoring_cfg,
+        target_lufs: float | None,
+        selected_mode: OptimizationMode,
+        progress_callback: ProgressCallback | None,
+        cancel_callback: CancelCallback | None,
+    ) -> None:
+        output_format = self.config.output_format.lower()
+        if output_format not in {"wav", "mp3"}:
+            output_format = "wav"
+        resolved_target_lufs = target_lufs if target_lufs is not None else DEFAULT_TARGET_LUFS
+        output_path = out_dir / f"{analysis.source_path.stem}_aimastering_cloud.{output_format}"
+        client = AiMasteringClient(self.config.aimastering)
+        mastering = client.create_mastering_job(
+            input_path=input_path,
+            target_lufs=resolved_target_lufs,
+            output_format=output_format,
+            true_peak_ceiling=scoring_cfg.hard_true_peak_max,
+            progress_callback=progress_callback,
+            cancel_callback=cancel_callback,
+        )
+        mastering_id = mastering.get("id")
+        if not isinstance(mastering_id, int):
+            raise ValueError(f"AI Mastering returned no mastering id: {mastering}")
+        status = str(mastering.get("status", "waiting"))
+        progression = mastering.get("progression")
+        progress = int(max(0.0, min(float(progression), 1.0)) * 100) if isinstance(progression, int | float) else 0
+        AiMasteringJobStore().append(
+            AiMasteringJob(
+                mastering_id=mastering_id,
+                source_path=str(analysis.source_path),
+                output_path=str(output_path),
+                output_dir=str(out_dir),
+                mode=selected_mode.value,
+                target_lufs=resolved_target_lufs,
+                output_format=output_format,
+                status=status,
+                progress=progress,
+                message=f"AI Mastering remote job created: {status}",
+                created_at=datetime.now(tz=UTC).isoformat(),
+                output_audio_id=None,
+            )
+        )
+        self._notify(progress_callback, f"AI Mastering queued remotely: {status}", 91)
 
     def _ensure_ffmpeg_available(self) -> None:
         if self._ffmpeg_checked:

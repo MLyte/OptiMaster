@@ -9,6 +9,15 @@ scoring:
   min_lra: 5.0
   preferred_lra_min: 6.0
   max_lufs_delta_from_source: 2.0
+aimastering:
+  base_url: https://api.bakuage.com
+  token_env: AIMASTERING_ACCESS_TOKEN
+  auth_prefix: ""
+  poll_interval_seconds: 3.0
+  timeout_seconds: 60.0
+  job_timeout_seconds: 900.0
+  preset: general
+  bit_depth: 24
 presets:
   enabled:
     - do_almost_nothing

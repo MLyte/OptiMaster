@@ -330,3 +330,75 @@ def test_maximize_loudness_renders_loudness_search(monkeypatch, tmp_path: Path):
     assert render_filters[4].endswith("loudnorm=I=-6.0:TP=-0.5:LRA=7.0")
     assert render_filters[5] == "volume=-1.7dB,alimiter=limit=-1dB"
     assert any("_loudest_" in candidate.preset.name for candidate in session.candidates)
+
+
+def test_optimize_can_use_aimastering_backend(monkeypatch, tmp_path: Path):
+    input_file = tmp_path / "input.wav"
+    input_file.write_bytes(b"stub")
+    output_dir = tmp_path / "renders"
+    source_metrics = LoudnessMetrics(-11.0, -1.3, 7.2, -20.2)
+    rendered_metrics = LoudnessMetrics(-9.5, -1.0, 6.8, -18.8)
+    calls: list[tuple[Path, float, str]] = []
+    render_calls: list[Path] = []
+    queued_jobs = []
+    preset = CandidatePreset(
+        name="safe_limit",
+        description="Safe limiter pass",
+        ffmpeg_filter="alimiter=limit=-1.0",
+    )
+
+    class FakeAiMasteringClient:
+        def __init__(self, _config):
+            pass
+
+        def create_mastering_job(
+            self,
+            input_path,
+            target_lufs,
+            output_format,
+            true_peak_ceiling,
+            progress_callback=None,
+            cancel_callback=None,
+        ):
+            calls.append((input_path, target_lufs, output_format))
+            if progress_callback:
+                progress_callback("Creating AI Mastering remote job", 90)
+            return {"id": 123, "status": "waiting", "progression": 0}
+
+    class FakeAiMasteringJobStore:
+        def append(self, job):
+            queued_jobs.append(job)
+
+    monkeypatch.setattr("optimaster.service.validate_input_file", lambda _: input_file)
+    monkeypatch.setattr("optimaster.service.assert_ffmpeg_available", lambda _: None)
+    monkeypatch.setattr(
+        "optimaster.service.analyze_loudness",
+        lambda path, **_: source_metrics if Path(path) == input_file else rendered_metrics,
+    )
+    monkeypatch.setattr("optimaster.service.classify_source", lambda *_: ("almost_ready", ["Stable profile"]))
+    monkeypatch.setattr("optimaster.service.select_presets_for_profile", lambda **_: [preset])
+    monkeypatch.setattr("optimaster.service.AiMasteringClient", FakeAiMasteringClient)
+    monkeypatch.setattr("optimaster.service.AiMasteringJobStore", FakeAiMasteringJobStore)
+    monkeypatch.setattr(
+        "optimaster.service.render_candidate",
+        lambda **kwargs: render_calls.append(kwargs["output_path"]),
+    )
+    monkeypatch.setattr("optimaster.service.score_candidate", lambda **_: (91.0, ["Good"]))
+
+    session = EngineService(AppConfig()).optimize(
+        input_file=input_file,
+        output_dir=output_dir,
+        mode=OptimizationMode.BALANCED,
+        target_lufs=-9.0,
+        mastering_backend="aimastering",
+    )
+
+    assert calls == [(input_file, -9.0, "wav")]
+    assert render_calls == [
+        output_dir / "input_safe_limit.wav",
+        output_dir / "input_safe_limit_optimaster.wav",
+    ]
+    candidate_names = [candidate.preset.name for candidate in session.candidates]
+    assert candidate_names == ["safe_limit", "safe_limit_optimaster"]
+    assert queued_jobs[0].mastering_id == 123
+    assert queued_jobs[0].output_path == str(output_dir / "input_aimastering_cloud.wav")
